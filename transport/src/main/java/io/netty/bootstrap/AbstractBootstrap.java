@@ -264,11 +264,14 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
      * Create a new {@link Channel} and bind it.
      */
     public ChannelFuture bind(SocketAddress localAddress) {
+        // 校验Netty核心组件是否配置齐全
         validate();
+        // 服务端开始启动，绑定端口地址，接收客户端连接
         return doBind(ObjectUtil.checkNotNull(localAddress, "localAddress"));
     }
 
     private ChannelFuture doBind(final SocketAddress localAddress) {
+        // 异步创建，初始化，注册ServerSocketChannel到main reactor上
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
         if (regFuture.cause() != null) {
@@ -276,14 +279,20 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         }
 
         if (regFuture.isDone()) {
+            // serverSocketChannel向Main Reactor注册成功后开始绑定端口
             // At this point we know that the registration was complete and successful.
             ChannelPromise promise = channel.newPromise();
             doBind0(regFuture, channel, localAddress, promise);
             return promise;
         } else {
+            // 如果此时注册操作没有完成，则向regFuture添加operationComplete回调函数，注册成功后回调。
             // Registration future is almost always fulfilled already, but just in case it's not.
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
+
             regFuture.addListener(new ChannelFutureListener() {
+                // 这里添加的listener最后的执行实际是在reactor线程中执行的
+                // 也就是 io.netty.channel.AbstractChannel.AbstractUnsafe.register0 中的  safeSetSuccess(promise)方法中调用
+                // 所以当这个方法执行时 register0 方法是没有执行完成的，所以即使当前线程已经是reactor线程，也需要提交到队列中执行，而不是直接执行
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
                     Throwable cause = future.cause();
@@ -307,7 +316,10 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     final ChannelFuture initAndRegister() {
         Channel channel = null;
         try {
+            // 创建NioServerSocketChannel
+            // ReflectiveChannelFactory通过泛型，反射，工厂的方式灵活创建不同类型的channel
             channel = channelFactory.newChannel();
+            // 初始化NioServerSocketChannel
             init(channel);
         } catch (Throwable t) {
             if (channel != null) {
@@ -320,6 +332,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
         }
 
+        //  向MainReactor注册ServerSocketChannel
         ChannelFuture regFuture = config().group().register(channel);
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {

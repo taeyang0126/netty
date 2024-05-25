@@ -129,18 +129,35 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     @Override
     void init(Channel channel) {
+        //向NioServerSocketChannelConfig设置ServerSocketChannelOption
         setChannelOptions(channel, newOptionsArray(), logger);
+        //向netty自定义的NioServerSocketChannel设置attributes
         setAttributes(channel, attrs0().entrySet().toArray(EMPTY_ATTRIBUTE_ARRAY));
 
         ChannelPipeline p = channel.pipeline();
 
+        //获取从Reactor线程组
         final EventLoopGroup currentChildGroup = childGroup;
+        //获取用于初始化客户端NioSocketChannel的ChannelInitializer
         final ChannelHandler currentChildHandler = childHandler;
+        //获取用户配置的客户端SocketChannel的channelOption以及attributes
         final Entry<ChannelOption<?>, Object>[] currentChildOptions;
         synchronized (childOptions) {
             currentChildOptions = childOptions.entrySet().toArray(EMPTY_OPTION_ARRAY);
         }
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = childAttrs.entrySet().toArray(EMPTY_ATTRIBUTE_ARRAY);
+
+        // 向NioServerSocketChannel中的pipeline添加初始化ChannelHandler的逻辑
+        // 这里添加的 ChannelInitializer 会在 io.netty.channel.AbstractChannel.AbstractUnsafe.register0#pipeline.invokeHandlerAddedIfNeeded() 执行
+        // 当这个channel被注册到selector后回调执行
+        // 初始化NioServerSocketChannel中pipeline的时机是：当NioServerSocketChannel注册到Main Reactor之后，绑定端口地址之前
+
+        /**
+         * 这里为什么不干脆直接将ChannelHandler添加到pipeline中，而是又使用到了ChannelInitializer呢?    <br/>
+         * 1. 为了保证线程安全地初始化pipeline，所以初始化的动作需要由Reactor线程进行，而当前线程是用户程序的启动Main线程 并不是Reactor线程。这里不能立即初始化    <br/>
+         * 2. 初始化Channel中pipeline的动作，需要等到Channel注册到对应的Reactor中才可以进行初始化，当前只是创建好了NioServerSocketChannel，但并未注册到Main Reactor上
+         *
+         */
 
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
@@ -151,6 +168,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     pipeline.addLast(handler);
                 }
 
+                //添加用于接收客户端连接的acceptor
                 ch.eventLoop().execute(new Runnable() {
                     @Override
                     public void run() {

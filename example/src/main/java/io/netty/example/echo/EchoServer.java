@@ -71,6 +71,7 @@ public final class EchoServer {
              });
 
             // Start the server.
+            // 这里的 ChannelFuture 会在绑定端口成功之后返回，active事件会被封装成异步任务
             ChannelFuture f = b.bind(PORT).sync();
 
             // Wait until the server socket is closed.

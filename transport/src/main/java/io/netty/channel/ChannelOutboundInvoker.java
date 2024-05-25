@@ -21,6 +21,9 @@ import io.netty.util.concurrent.FutureListener;
 import java.net.ConnectException;
 import java.net.SocketAddress;
 
+/**
+ * 对Channel的操作行为全部定义在ChannelOutboundInvoker接口中
+ */
 public interface ChannelOutboundInvoker {
 
     /**

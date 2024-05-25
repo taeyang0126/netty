@@ -208,6 +208,8 @@ public class DefaultChannelPipeline implements ChannelPipeline {
             // If the registered is false it means that the channel was not registered on an eventLoop yet.
             // In this case we add the context to the pipeline and add a task that will call
             // ChannelHandler.handlerAdded(...) once the channel is registered.
+            // 如果 registered 为 false，则表示该通道尚未在 eventLoop 上注册。
+            // 在本例中，我们将上下文添加到管道中，并添加一个任务，该任务将在注册通道后调用 ChannelHandler.handlerAdded（...）
             if (!registered) {
                 newCtx.setAddPending();
                 callHandlerCallbackLater(newCtx, true);
@@ -1331,6 +1333,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         @Override
         public void bind(
                 ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) {
+            //触发AbstractChannel->bind方法 执行JDK NIO SelectableChannel 执行底层绑定操作
             unsafe.bind(localAddress, promise);
         }
 
@@ -1395,8 +1398,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) {
+            //pipeline中继续向后传播channelActive事件
             ctx.fireChannelActive();
-
+            //如果是autoRead 则自动触发read事件传播
+            //在read回调函数中 触发OP_ACCEPT注册
             readIfIsAutoRead();
         }
 
@@ -1445,6 +1450,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         abstract void execute();
     }
 
+    // 等待处理的handlerAdded任务
     private final class PendingHandlerAddedTask extends PendingHandlerCallback {
 
         PendingHandlerAddedTask(AbstractChannelHandlerContext ctx) {

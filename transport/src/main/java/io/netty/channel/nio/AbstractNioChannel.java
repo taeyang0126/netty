@@ -50,7 +50,9 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     private static final InternalLogger logger =
             InternalLoggerFactory.getInstance(AbstractNioChannel.class);
 
+    //JDK NIO原生Selectable Channel
     private final SelectableChannel ch;
+    // Channel监听事件集合
     protected final int readInterestOp;
     volatile SelectionKey selectionKey;
     boolean readPending;
@@ -81,6 +83,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         this.ch = ch;
         this.readInterestOp = readInterestOp;
         try {
+            //设置Channel为非阻塞 配合IO多路复用模型
             ch.configureBlocking(false);
         } catch (IOException e) {
             try {
@@ -377,6 +380,15 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         boolean selected = false;
         for (;;) {
             try {
+                // SelectionKey可以理解为Channel在Selector上的特殊表示形式，
+                // SelectionKey中封装了Channel感兴趣的IO事件集合~~~interestOps，以及IO就绪的事件集合~~readyOps，
+                // 同时也封装了对应的JDK NIO Channel以及注册的Selector。最后还有一个重要的属性attachment，可以允许我们在SelectionKey上附加一些自定义的对象
+
+                // 这里NioServerSocketChannel向Reactor中的Selector注册的IO事件为0，这个操作的主要目的是先获取到Channel在Selector中对应的SelectionKey，完成注册。
+                // 当某些操作完成后，再去向 selectionKey 增加感兴趣的事件
+
+                // 这里将netty中定义的channel对象attach到SelectionKeys上，完成Netty自定义Channel与JDK NIO Channel的关系绑定
+                // 这样在每次对Selector进行IO就绪事件轮询时，Netty 都可以从 JDK NIO Selector返回的SelectionKey中获取到自定义的Channel对象
                 selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
                 return;
             } catch (CancelledKeyException e) {
@@ -409,8 +421,10 @@ public abstract class AbstractNioChannel extends AbstractChannel {
 
         readPending = true;
 
+        // ServerSocketChannel: 初始化时 readInterestOp设置的是OP_ACCEPT事件
         final int interestOps = selectionKey.interestOps();
         if ((interestOps & readInterestOp) == 0) {
+            // ServerSocketChannel: 添加OP_ACCEPT事件到interestOps集合中
             selectionKey.interestOps(interestOps | readInterestOp);
         }
     }

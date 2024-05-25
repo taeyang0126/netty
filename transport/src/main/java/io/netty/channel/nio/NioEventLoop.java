@@ -167,6 +167,11 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
     }
 
+    /**
+     * 这里会对jdk原生提供的selector进行优化
+     * 主要优化的点就是IO就绪的selectKey存储容器从Set换成了SelectedSelectionKeySet，后者底层由数组构建，
+     * 添加时没有hash碰撞，遍历时由于是数组利用了cpu缓存，所以效率提升
+     */
     private SelectorTuple openSelector() {
         final Selector unwrappedSelector;
         try {
@@ -179,6 +184,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             return new SelectorTuple(unwrappedSelector);
         }
 
+        // 判断是不是jdk提供的selector
         Object maybeSelectorImplClass = AccessController.doPrivileged(new PrivilegedAction<Object>() {
             @Override
             public Object run() {
@@ -193,6 +199,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             }
         });
 
+        // 如果不是jdk提供的，那么不进行优化处理
         if (!(maybeSelectorImplClass instanceof Class) ||
             // ensure the current selector implementation is what we can instrument.
             !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
@@ -204,6 +211,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
 
         final Class<?> selectorImplClass = (Class<?>) maybeSelectorImplClass;
+        // 这里直接构建了一个新值存放到当前nioEventLoop对象中，这样后续有就绪的IO事件只需要访问此对象，不需要jdk原生的select
         final SelectedSelectionKeySet selectedKeySet = new SelectedSelectionKeySet();
 
         Object maybeException = AccessController.doPrivileged(new PrivilegedAction<Object>() {
@@ -239,6 +247,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                         return cause;
                     }
 
+                    // 替换IO就绪的selectKey容器
                     selectedKeysField.set(unwrappedSelector, selectedKeySet);
                     publicSelectedKeysField.set(unwrappedSelector, selectedKeySet);
                     return null;
