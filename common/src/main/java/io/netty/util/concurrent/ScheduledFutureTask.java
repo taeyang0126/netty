@@ -27,11 +27,14 @@ import java.util.concurrent.TimeUnit;
 final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFuture<V>, PriorityQueueNode {
     private static final long START_TIME = System.nanoTime();
 
+    // 计算的是当前时间与启动时间之间的延迟
     static long nanoTime() {
         return System.nanoTime() - START_TIME;
     }
 
     static long deadlineNanos(long delay) {
+        // deadline的计算逻辑是当前时间点+任务延时delay-系统启动时间
+        // 简单来说 deadline = 距离启动时间的延迟
         long deadlineNanos = nanoTime() + delay;
         // Guard against overflow
         return deadlineNanos < 0 ? Long.MAX_VALUE : deadlineNanos;
@@ -119,6 +122,7 @@ final class ScheduledFutureTask<V> extends PromiseTask<V> implements ScheduledFu
     }
 
     static long deadlineToDelayNanos(long deadlineNanos) {
+        // deadlineNanos - nanoTime() 表示任务的延迟时间(距离开始时间)-当前时间距离开始的延迟时间
         return deadlineNanos == 0L ? 0L : Math.max(0L, deadlineNanos - nanoTime());
     }
 

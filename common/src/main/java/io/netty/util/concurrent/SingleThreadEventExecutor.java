@@ -86,6 +86,8 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
 
     private final CountDownLatch threadLock = new CountDownLatch(1);
     private final Set<Runnable> shutdownHooks = new LinkedHashSet<Runnable>();
+    //addTaskWakesUp = true 表示 当且仅当只有调用addTask方法时 才会唤醒Reactor线程
+    //addTaskWakesUp = false 表示 并不是只有addTask方法才能唤醒Reactor 还有其他方法可以唤醒Reactor 默认设置false
     private final boolean addTaskWakesUp;
     private final int maxPendingTasks;
     private final RejectedExecutionHandler rejectedExecutionHandler;
@@ -283,11 +285,13 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         }
         long nanoTime = AbstractScheduledEventExecutor.nanoTime();
         for (;;) {
+            //从定时任务队列中取出到达执行deadline的定时任务  deadline <= nanoTime
             Runnable scheduledTask = pollScheduledTask(nanoTime);
             if (scheduledTask == null) {
                 return true;
             }
             if (!taskQueue.offer(scheduledTask)) {
+                // taskQueue没有空间容纳 则在将定时任务重新塞进定时任务队列中等待下次执行
                 // No space left in the task queue add it back to the scheduledTaskQueue so we pick it up again.
                 scheduledTaskQueue.add((ScheduledFutureTask<?>) scheduledTask);
                 return false;
@@ -375,6 +379,8 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         boolean ranAtLeastOne = false;
 
         do {
+            //fetchFromScheduledTaskQueue方法的返回值为true时表示到期的定时任务已经全部拉取出来并转存到普通任务队列中。 返回值为false时表示到期的定时任务只拉取出来一部分，因为这时普通任务队列已经满了，当执行完普通任务时，还需要在进行一次拉取
+            // 将到达执行时间的定时任务转存到普通任务队列taskQueue中，统一由Reactor线程从taskQueue中取出执行
             fetchedAll = fetchFromScheduledTaskQueue();
             if (runAllTasksFrom(taskQueue)) {
                 ranAtLeastOne = true;
@@ -384,6 +390,7 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         if (ranAtLeastOne) {
             lastExecutionTime = ScheduledFutureTask.nanoTime();
         }
+        //执行尾部队列任务
         afterRunningAllTasks();
         return ranAtLeastOne;
     }
@@ -463,10 +470,12 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         fetchFromScheduledTaskQueue();
         Runnable task = pollTask();
         if (task == null) {
+            //普通队列中没有任务时  执行队尾队列的任务
             afterRunningAllTasks();
             return false;
         }
 
+        //异步任务执行超时deadline
         final long deadline = timeoutNanos > 0 ? ScheduledFutureTask.nanoTime() + timeoutNanos : 0;
         long runTasks = 0;
         long lastExecutionTime;
@@ -477,8 +486,10 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
 
             // Check timeout every 64 tasks because nanoTime() is relatively expensive.
             // XXX: Hard-coded value - will make it configurable if it is really a problem.
+            //每运行64个异步任务 检查一下 是否达到 执行deadline
             if ((runTasks & 0x3F) == 0) {
                 lastExecutionTime = ScheduledFutureTask.nanoTime();
+                //到达异步任务执行超时deadline，停止执行异步任务
                 if (lastExecutionTime >= deadline) {
                     break;
                 }
@@ -825,10 +836,14 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         execute(ObjectUtil.checkNotNull(task, "task"), false);
     }
 
+    /**
+     *
+     * @param task true 表示当且仅当只有调用addTask方法时才会唤醒Reactor线程。调用别的方法并不会唤醒Reactor线程。 在初始化NioEventLoop时会设置为false，表示并不是只有addTask方法才能唤醒Reactor线程 还有其他方法可以唤醒Reactor线程，比如这里的execute方法就会唤醒Reactor线程
+     * @param immediate 表示提交的task是否需要被立即执行。Netty中只要你提交的任务类型不是LazyRunnable类型的任务，都是需要立即执行的。immediate = true
+     */
     private void execute(Runnable task, boolean immediate) {
         //当前线程是否为Reactor线程
         boolean inEventLoop = inEventLoop();
-        //addTaskWakesUp = true  addTask唤醒Reactor线程执行任务
         addTask(task);
         if (!inEventLoop) {
             //如果当前线程不是Reactor线程，则启动Reactor线程

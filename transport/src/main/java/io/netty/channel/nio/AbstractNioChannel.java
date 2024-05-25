@@ -54,6 +54,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     private final SelectableChannel ch;
     // Channel监听事件集合
     protected final int readInterestOp;
+    // channel注册到Selector后获得的SelectKey
     volatile SelectionKey selectionKey;
     boolean readPending;
     private final Runnable clearReadPendingRunnable = new Runnable() {
@@ -304,6 +305,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
 
             // Regardless if the connection attempt was cancelled, channelActive() event should be triggered,
             // because what happened is what happened.
+            // 触发active事件
             if (!wasActive && active) {
                 pipeline().fireChannelActive();
             }
