@@ -524,6 +524,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 // user may already fire events through the pipeline in the ChannelFutureListener.
                 // 回调handlerAdded()方法
                 // 回调pipeline中添加的ChannelInitializer的handlerAdded方法，在这里初始化channelPipeline
+                // 之所以需要在promise完成之前触发是因为promise中的某些回调可能进行某些操作
                 pipeline.invokeHandlerAddedIfNeeded();
 
                 // 设置regFuture为success，触发operationComplete回调,将bind操作放入Reactor的任务队列中，等待Reactor线程执行。
@@ -536,8 +537,8 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
                 // Only fire a channelActive if the channel has never been registered. This prevents firing
                 // multiple channel actives if the channel is deregistered and re-registered.
-                // 对于服务端ServerSocketChannel来说 只有绑定端口地址成功后  。
-                // 此时绑定操作作为异步任务在Reactor的任务队列中，绑定操作还没开始，所以这里的isActive()是false
+                // 对于服务端ServerSocketChannel来说 只有绑定端口地址成功后才是Active，此时绑定操作作为异步任务在Reactor的任务队列中，绑定操作还没开始，所以这里的isActive()是false
+                // 对于客户端SocketChannel来说，从服务端接收连接后channel已经是Active了，所以这里是true，直接传递Active事件
                 if (isActive()) {
                     if (firstRegistration) {
                         pipeline.fireChannelActive();

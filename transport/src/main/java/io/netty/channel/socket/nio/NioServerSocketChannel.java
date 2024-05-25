@@ -150,10 +150,12 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
 
     @Override
     protected int doReadMessages(List<Object> buf) throws Exception {
+        // 接收三次握手完成的连接
         SocketChannel ch = SocketUtils.accept(javaChannel());
 
         try {
             if (ch != null) {
+                // 将连接添加到 buf 中
                 buf.add(new NioSocketChannel(this, ch));
                 return 1;
             }

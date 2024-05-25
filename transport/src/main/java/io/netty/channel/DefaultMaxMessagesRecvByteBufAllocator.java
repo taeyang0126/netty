@@ -86,8 +86,13 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
      */
     public abstract class MaxMessageHandle implements ExtendedHandle {
         private ChannelConfig config;
+        //每次事件轮询时，最多读取16次
         private int maxMessagePerRead;
+        //本次事件轮询总共读取的message数,这里指的是接收连接的数量
         private int totalMessages;
+        // 本次事件轮询总共读取的字节数
+        // totalBytesRead字段主要记录sub reactor线程在处理客户端NioSocketChannel中OP_READ事件活跃时，总共在read loop中读取到的网络数据，
+        // 而这里是main reactor线程在接收客户端连接所以这个字段并不会被设置。totalBytesRead字段的值在本文中永远会是0
         private int totalBytesRead;
         private int attemptedBytesRead;
         private int lastBytesRead;
@@ -142,6 +147,9 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
             return config.isAutoRead() &&
                    (!respectMaybeMoreData || maybeMoreDataSupplier.get()) &&
                    totalMessages < maxMessagePerRead &&
+                   // 此字段表明 OP_READ 事件读取的字节，在 OP_ACCEPT 事件下永远为0，这就导致此方法一定返回false
+                   // netty本意是一次最多接收16个连接，但是因为这里导致每次接收一个连接就重新reactor轮询了，一定程度上降低了吞吐
+                   // bug: https://github.com/netty/netty/issues/11708 此bug在4.1.69.Final进行了修复
                    totalBytesRead > 0;
         }
 
