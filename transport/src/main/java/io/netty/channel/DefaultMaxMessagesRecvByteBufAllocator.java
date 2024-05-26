@@ -86,20 +86,27 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
      */
     public abstract class MaxMessageHandle implements ExtendedHandle {
         private ChannelConfig config;
-        //每次事件轮询时，最多读取16次
+        //用于控制每次read loop里最大可以循环读取的次数，默认为16次
+        //可在启动配置类ServerBootstrap中通过ChannelOption.MAX_MESSAGES_PER_READ选项设置。
         private int maxMessagePerRead;
-        //本次事件轮询总共读取的message数,这里指的是接收连接的数量
+        //用于统计read loop中总共接收的连接个数，NioSocketChannel中表示读取数据的次数
+        //每次read loop循环后会调用allocHandle.incMessagesRead增加记录接收到的连接个数
         private int totalMessages;
         // 本次事件轮询总共读取的字节数
         // totalBytesRead字段主要记录sub reactor线程在处理客户端NioSocketChannel中OP_READ事件活跃时，总共在read loop中读取到的网络数据，
         // 而这里是main reactor线程在接收客户端连接所以这个字段并不会被设置。totalBytesRead字段的值在本文中永远会是0
         private int totalBytesRead;
+        //表示本次read loop 尝试读取多少字节，byteBuffer剩余可写的字节数
         private int attemptedBytesRead;
+        //本次read loop读取到的字节数
         private int lastBytesRead;
+        // respectMaybeMoreData = true表示要对可能还有更多数据进行处理的这种情况要respect认真对待,如果本次循环读取到的数据已经装满ByteBuffer，表示后面可能还有数据，那么就要进行读取。如果ByteBuffer还没装满表示已经没有数据可读了那么就退出循环
+        // respectMaybeMoreData = false表示对可能还有更多数据的这种情况不认真对待 not respect。不管本次循环读取数据ByteBuffer是否满载而归，都要继续进行读取，直到读取不到数据在退出循环，属于无脑读取
         private final boolean respectMaybeMoreData = DefaultMaxMessagesRecvByteBufAllocator.this.respectMaybeMoreData;
         private final UncheckedBooleanSupplier defaultMaybeMoreSupplier = new UncheckedBooleanSupplier() {
             @Override
             public boolean get() {
+                //判断本次读取byteBuffer是否满载而归
                 return attemptedBytesRead == lastBytesRead;
             }
         };
@@ -110,6 +117,7 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
         @Override
         public void reset(ChannelConfig config) {
             this.config = config;
+            //默认每次最多读取16次
             maxMessagePerRead = maxMessagesPerRead();
             totalMessages = totalBytesRead = 0;
         }
@@ -144,8 +152,10 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
 
         @Override
         public boolean continueReading(UncheckedBooleanSupplier maybeMoreDataSupplier) {
+            // maybeMoreDataSupplier 用于判断经过本次read loop读取数据后，ByteBuffer是否满载而归。如果是满载而归的话（attemptedBytesRead == lastBytesRead），表明可能NioSocketChannel里还有数据。如果不是满载而归，表明NioSocketChannel里没有数据了已经
             return config.isAutoRead() &&
                    (!respectMaybeMoreData || maybeMoreDataSupplier.get()) &&
+                   // 当前读取次数是否已经超过16次，如果超过，就退出do(...)while()循环。进行下一轮OP_READ事件的轮询。因为每个Sub Reactor管理了多个NioSocketChannel，不能在一个NioSocketChannel上占用太多时间，要将机会均匀地分配给Sub Reactor所管理的所有NioSocketChannel
                    totalMessages < maxMessagePerRead &&
                    // 此字段表明 OP_READ 事件读取的字节，在 OP_ACCEPT 事件下永远为0，这就导致此方法一定返回false
                    // netty本意是一次最多接收16个连接，但是因为这里导致每次接收一个连接就重新reactor轮询了，一定程度上降低了吞吐

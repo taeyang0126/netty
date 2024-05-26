@@ -134,40 +134,59 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         @Override
         public final void read() {
             final ChannelConfig config = config();
+            // 处理半关闭相关代码
             if (shouldBreakReadReady(config)) {
                 clearReadPending();
                 return;
             }
             final ChannelPipeline pipeline = pipeline();
+            //PooledByteBufAllocator为Netty中的内存池，用来管理堆外内存DirectByteBuffer。
+            //PooledByteBufAllocator 具体用于实际分配ByteBuf的分配器
+            // 它会根据AdaptiveRecvByteBufAllocator动态调整出来的大小去真正的申请内存分配ByteBuffer
             final ByteBufAllocator allocator = config.getAllocator();
+            //自适应ByteBuf分配器 AdaptiveRecvByteBufAllocator ,用于动态调节ByteBuf容量
+            // AdaptiveRecvByteBufAllocator并不会真正的去分配ByteBuffer，它只是负责动态调整分配ByteBuffer的大小
+            //需要与具体的ByteBuf分配器配合使用 比如这里的PooledByteBufAllocator
             final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
+            //allocHandler用于统计每次读取数据的大小，方便下次分配合适大小的ByteBuf
+            //重置清除上次的统计指标
             allocHandle.reset(config);
 
             ByteBuf byteBuf = null;
             boolean close = false;
             try {
                 do {
+                    //利用PooledByteBufAllocator分配合适大小的byteBuf 初始大小为2048
                     byteBuf = allocHandle.allocate(allocator);
+                    //记录本次读取了多少字节数
                     allocHandle.lastBytesRead(doReadBytes(byteBuf));
+                    //如果本次没有读取到任何字节，则退出循环 进行下一轮事件轮询
                     if (allocHandle.lastBytesRead() <= 0) {
                         // nothing was read. release the buffer.
                         byteBuf.release();
                         byteBuf = null;
                         close = allocHandle.lastBytesRead() < 0;
                         if (close) {
+                            // 表示客户端发起连接关闭
                             // There is nothing left to read as we received an EOF.
                             readPending = false;
                         }
                         break;
                     }
 
+                    //read loop读取数据次数+1
                     allocHandle.incMessagesRead(1);
                     readPending = false;
+                    //客户端NioSocketChannel的pipeline中触发ChannelRead事件
                     pipeline.fireChannelRead(byteBuf);
+                    //解除本次读取数据分配的ByteBuffer引用，方便下一轮read loop分配
                     byteBuf = null;
-                } while (allocHandle.continueReading());
+                } while (allocHandle.continueReading()); //判断是否应该继续read loop
 
+                //根据本次read loop总共读取的字节数，决定下次是否扩容或者缩容
                 allocHandle.readComplete();
+                //在NioSocketChannel的pipeline中触发ChannelReadComplete事件，表示一次read事件处理完毕
+                //但这并不表示 客户端发送来的数据已经全部读完，因为如果数据太多的话，这里只会读取16次，剩下的会等到下次read事件到来后在处理
                 pipeline.fireChannelReadComplete();
 
                 if (close) {

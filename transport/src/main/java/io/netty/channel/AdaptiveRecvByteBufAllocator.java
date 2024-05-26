@@ -39,22 +39,28 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
     static final int DEFAULT_INITIAL = 2048;
     static final int DEFAULT_MAXIMUM = 65536;
 
+    //扩容步长
     private static final int INDEX_INCREMENT = 4;
+    //缩容步长
     private static final int INDEX_DECREMENT = 1;
-
+    //RecvBuf分配容量表（扩缩容索引表）按照表中记录的容量大小进行扩缩容
     private static final int[] SIZE_TABLE;
 
     static {
+        //初始化RecvBuf容量分配表
         List<Integer> sizeTable = new ArrayList<Integer>();
+        //当分配容量小于512时，扩容单位为16递增
         for (int i = 16; i < 512; i += 16) {
             sizeTable.add(i);
         }
 
         // Suppress a warning since i becomes negative when an integer overflow happens
+        //当分配容量大于512时，扩容单位为一倍
         for (int i = 512; i > 0; i <<= 1) { // lgtm[java/constant-comparison]
             sizeTable.add(i);
         }
 
+        //初始化RecbBuf扩缩容索引表
         SIZE_TABLE = new int[sizeTable.size()];
         for (int i = 0; i < SIZE_TABLE.length; i ++) {
             SIZE_TABLE[i] = sizeTable.get(i);
@@ -92,17 +98,23 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
     }
 
     private final class HandleImpl extends MaxMessageHandle {
+        //最小容量在扩缩容索引表中的index
         private final int minIndex;
+        //最大容量在扩缩容索引表中的index
         private final int maxIndex;
+        //当前容量在扩缩容索引表中的index 初始33 对应容量2048
         private int index;
+        //预计下一次分配buffer的容量，初始：2048
         private int nextReceiveBufferSize;
+        //是否缩容
         private boolean decreaseNow;
 
         HandleImpl(int minIndex, int maxIndex, int initial) {
             this.minIndex = minIndex;
             this.maxIndex = maxIndex;
-
+            //在扩缩容索引表中二分查找到最小大于等于initial 的容量
             index = getSizeTableIndex(initial);
+            //2048
             nextReceiveBufferSize = SIZE_TABLE[index];
         }
 
@@ -120,6 +132,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
 
         @Override
         public int guess() {
+            //预计下一次分配buffer的容量，一开始为2048
             return nextReceiveBufferSize;
         }
 
@@ -141,6 +154,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
 
         @Override
         public void readComplete() {
+            //是否对recvbuf进行扩容缩容
             record(totalBytesRead());
         }
     }
