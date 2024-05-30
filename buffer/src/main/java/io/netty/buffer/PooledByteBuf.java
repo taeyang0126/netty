@@ -28,6 +28,7 @@ import java.nio.channels.ScatteringByteChannel;
 
 abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
 
+    //对象在对象池中的回收句柄
     private final Handle<PooledByteBuf<T>> recyclerHandle;
 
     protected PoolChunk<T> chunk;
@@ -175,6 +176,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
         }
     }
 
+    //回收对象
     private void recycle() {
         recyclerHandle.recycle(this);
     }
