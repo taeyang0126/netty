@@ -168,6 +168,9 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     pipeline.addLast(handler);
                 }
 
+                // todo-wl 这里为什么添加handler需要封装为一个任务，而不是直接添加任务？
+                // 可能的一个解释，这个方法是通过 AbstractChannel#invokeHandlerAddedIfNeeded 进行触发的，
+                // 此方法触发时channel还没有开始接受连接，所以此处理器添加了也没有意义
                 //添加用于接收客户端连接的acceptor
                 ch.eventLoop().execute(new Runnable() {
                     @Override
