@@ -391,6 +391,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
 
                 // 这里将netty中定义的channel对象attach到SelectionKeys上，完成Netty自定义Channel与JDK NIO Channel的关系绑定
                 // 这样在每次对Selector进行IO就绪事件轮询时，Netty 都可以从 JDK NIO Selector返回的SelectionKey中获取到自定义的Channel对象
+                // 同一个channel向同一个selector无论注册多少次，返回的selectionKey都是同一个，只是内部感兴趣的事件不一样
                 selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
                 return;
             } catch (CancelledKeyException e) {

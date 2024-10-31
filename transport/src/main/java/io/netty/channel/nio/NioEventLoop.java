@@ -574,8 +574,12 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             } finally {
                 // Always handle shutdown even if the loop processing threw an exception.
                 try {
+                    // 设置了优雅关闭状态，这里处理优雅关闭
                     if (isShuttingDown()) {
+                        // 删除注册的感兴趣事件 & 关闭底层的channel
                         closeAll();
+                        // 判断taskQueue或者hook是否执行完成，如果有任务还在执行，或者上次任务执行时间距今在一个静默期内，那么这里返回false，表示继续走一轮循环，处理优雅关闭
+                        // 反之结束整个优雅关闭的处理
                         if (confirmShutdown()) {
                             return;
                         }
@@ -648,6 +652,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     void cancel(SelectionKey key) {
+        // 这里的cancel只是标记，实际删除只有在下次调用 select() 时才会真正清理
+        // 所以才有下面的达到256个进行重新select
         key.cancel();
         cancelledKeys ++;
         // 当从selector中移除的socketChannel数量达到256个，设置needsToSelectAgain为true
@@ -825,6 +831,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     private void closeAll() {
+        // 把注册在 selector 上的所有 Channel 都关闭
         selectAgain();
         Set<SelectionKey> keys = selector.keys();
         Collection<AbstractNioChannel> channels = new ArrayList<AbstractNioChannel>(keys.size());
@@ -840,6 +847,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             }
         }
 
+        // 关闭这个selector下的所有channel
         for (AbstractNioChannel ch: channels) {
             ch.unsafe().close(ch.unsafe().voidPromise());
         }

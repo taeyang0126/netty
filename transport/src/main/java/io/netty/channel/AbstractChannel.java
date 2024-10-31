@@ -426,6 +426,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         private volatile ChannelOutboundBuffer outboundBuffer = new ChannelOutboundBuffer(AbstractChannel.this);
         // 分配内存，接收数据
         private RecvByteBufAllocator.Handle recvHandle;
+        // 此标识表示当前正在向channel写入数据，也就是将outboundBuffer中的数据写入到实际的channel中
         private boolean inFlush0;
         /** true if the channel has never been registered, false otherwise */
         private boolean neverRegistered = true;
@@ -749,6 +750,8 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
 
             final boolean wasActive = isActive();
             final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+            // 将发送队列清空，不允许发送新的消息
+            // 这里清空不影响flush操作，因为flush操作中已经将outboundBuffer赋值给了新的本地变量
             this.outboundBuffer = null; // Disallow adding any messages and flushes to outboundBuffer.
             Executor closeExecutor = prepareToClose();
             if (closeExecutor != null) {
@@ -777,6 +780,8 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             } else {
                 try {
                     // Close the channel and fail the queued messages in all cases.
+                    // 关闭底层的channel
+                    // io.netty.channel.socket.nio.NioSocketChannel.doClose
                     doClose0(promise);
                 } finally {
                     if (outboundBuffer != null) {
@@ -785,7 +790,11 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                         outboundBuffer.close(closeCause);
                     }
                 }
+                // 如果还在发送消息的过程中，那么将取消操作封装为task稍后执行
+                // 因为flush也是在eventLoop线程中执行，所以这里封装为task，等到task执行的时候flush一定是完成的
+                // todo-wl 这里我觉得不可能出现为true，因为flush方法和close方法都是在eventLoop线程中执行的，那么inFlush0就不可能为true，一定是为false的，因为close方法需要等flush完成
                 if (inFlush0) {
+                    System.err.println("数据发送过程中close");
                     invokeLater(new Runnable() {
                         @Override
                         public void run() {
@@ -854,10 +863,12 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 @Override
                 public void run() {
                     try {
+                        // 将对应channel注册的selectorKey cancel
                         doDeregister();
                     } catch (Throwable t) {
                         logger.warn("Unexpected exception occurred while deregistering a channel.", t);
                     } finally {
+                        // fireChannelInactive 这里表示之前的活跃的，通过目前这个操作变成了不活跃，所以这里需要传播事件
                         if (fireChannelInactive) {
                             pipeline.fireChannelInactive();
                         }

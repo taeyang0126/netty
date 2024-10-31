@@ -632,6 +632,9 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
 
     @Override
     public Future<?> shutdownGracefully(long quietPeriod, long timeout, TimeUnit unit) {
+        // 实际每个NioEventLoop的优雅关闭方法
+        // 这里的优雅关闭实际上就是将当前线程的状态修改为关闭中
+        // 这样nioEventLoopGroup在循环的时候就能检查这个状态进行优雅关闭
         ObjectUtil.checkPositiveOrZero(quietPeriod, "quietPeriod");
         if (timeout < quietPeriod) {
             throw new IllegalArgumentException(
@@ -773,6 +776,8 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
             gracefulShutdownStartTime = ScheduledFutureTask.nanoTime();
         }
 
+        // 1. 执行taskQueue中的所有任务
+        // 2. 执行注册到NioEventLoop中的ShutdownHook
         if (runAllTasks() || runShutdownHooks()) {
             if (isShutdown()) {
                 // Executor shut down - no new tasks anymore.
@@ -791,10 +796,14 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
 
         final long nanoTime = ScheduledFutureTask.nanoTime();
 
+        // 判断是否到达优雅退出的指定超时时间，如果达到或者过了超时时间，则立即退出
         if (isShutdown() || nanoTime - gracefulShutdownStartTime > gracefulShutdownTimeout) {
             return true;
         }
 
+        // 如果没到达指定的超时时间，暂时不退出，每隔100ms检测一下是否有新的任务加入，有新任务则继续执行
+        // nanoTime - lastExecutionTime 表示当前时间减去最后一个任务的执行时间之间的间隔
+        // gracefulShutdownQuietPeriod 表示静默期，默认=2s，表示在这个区间范围内，如果没有任务添加，那么就等着，如果超过了这个区间还没有任务添加，那么直接结束
         if (nanoTime - lastExecutionTime <= gracefulShutdownQuietPeriod) {
             // Check if any tasks were added to the queue every 100ms.
             // TODO: Change the behavior of takeTask() so that it returns on timeout.
@@ -808,6 +817,7 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
             return false;
         }
 
+        // 表示在静默期之内没有任务添加，则可以返回true了，eventLoop线程生命周期结束
         // No tasks were added for last quiet period - hopefully safe to shut down.
         // (Hopefully because we really cannot make a guarantee that there will be no execute() calls by a user.)
         return true;
