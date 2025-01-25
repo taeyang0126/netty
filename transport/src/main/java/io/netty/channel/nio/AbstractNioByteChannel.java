@@ -44,7 +44,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
     private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
     private static final String EXPECTED_TYPES =
             " (expected: " + StringUtil.simpleClassName(ByteBuf.class) + ", " +
-            StringUtil.simpleClassName(FileRegion.class) + ')';
+                    StringUtil.simpleClassName(FileRegion.class) + ')';
 
     private final Runnable flushTask = new Runnable() {
         @Override
@@ -86,6 +86,9 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
     }
 
     final boolean shouldBreakReadReady(ChannelConfig config) {
+        // inputClosedSeenErrorOnRead 会在 io.netty.channel.nio.AbstractNioByteChannel.NioByteUnsafe.closeOnRead 中设置
+        // 结果就是半关闭下，会多响应一次 OP_READ 事件，这次事件中会触发 ChannelInputShutdownReadComplete 事件，用户可以在这进行关闭连接
+        // 之后再次读取到 OP_READ 事件，就不会响应，而是直接注销感兴趣事件了
         return isInputShutdown0() && (inputClosedSeenErrorOnRead || !isAllowHalfClosure(config));
     }
 
@@ -97,24 +100,39 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
     protected class NioByteUnsafe extends AbstractNioUnsafe {
 
         private void closeOnRead(ChannelPipeline pipeline) {
+            // isInputShutdown0 判断
             if (!isInputShutdown0()) {
                 if (isAllowHalfClosure(config())) {
                     shutdownInput();
+                    // 传播 ChannelInputShutdownEvent 事件
                     pipeline.fireUserEventTriggered(ChannelInputShutdownEvent.INSTANCE);
                 } else {
+                    //如果不支持半关闭，则服务端直接调用close方法向客户端发送fin,结束close_wait状态进如last_ack状态
                     close(voidPromise());
                 }
             } else {
+                // 关闭了可读通道之后，由于是半关闭，整个连接还没有关闭
+                // 导致 OP_READ 事件还在触发，当 Reactor 处理完 ChannelInputShutdownEven，还能一直读取到 -1，这里就是这个场景下会走到这一步
+                // 触发 ChannelInputShutdownReadComplete 事件
+
+                // 设置 inputClosedSeenErrorOnRead = true 表示此时 Channel 的读通道已经关闭了，不能再继续响应 OP_READ 事件，
+                // 因为半关闭状态下，Selector 会不停的通知 OP_READ 事件，如果不停无脑响应的话，会造成极大的 CPU 资源的浪费
+                // 不过 JDK 这样处理也是合理的,毕竟半关闭状态连接并没有完全关闭，只要连接没有完全关闭，就不停的通知你，直到关闭连接为止
                 inputClosedSeenErrorOnRead = true;
+
+                // 在 pipeline 中触发 ChannelInputShutdownReadComplete 事件，
+                // 此事件的触发标志着服务端在 CLOSE_WAIT 状态下已经将所有遗留的数据发送给了客户端，
+                // 服务端可以在该事件的回调中关闭 Channel ，结束 CLOSE_WAIT 进入 LAST_ACK 状态
                 pipeline.fireUserEventTriggered(ChannelInputShutdownReadComplete.INSTANCE);
             }
         }
 
         private void handleReadException(ChannelPipeline pipeline, ByteBuf byteBuf, Throwable cause, boolean close,
-                RecvByteBufAllocator.Handle allocHandle) {
+                                         RecvByteBufAllocator.Handle allocHandle) {
             if (byteBuf != null) {
                 if (byteBuf.isReadable()) {
                     readPending = false;
+                    // 如果发生异常时，已经读取到了部分数据，则触发ChannelRead事件
                     pipeline.fireChannelRead(byteBuf);
                 } else {
                     byteBuf.release();
@@ -134,11 +152,16 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         @Override
         public final void read() {
             final ChannelConfig config = config();
-            // 处理半关闭相关代码
+
+            // 处理连接半关闭相关代码
+            // 因为连接半关闭的情况下，能一直触发 OP_READ 事件，这里需要进行处理
             if (shouldBreakReadReady(config)) {
+                // 需要调用 clearReadPending 方法将读事件从 Reactor 中取消掉，停止对 OP_READ 事件的监听。
+                // 否则 Reactor 线程就会在半关闭期间内一直在这里空转，导致 CPU 100%。
                 clearReadPending();
                 return;
             }
+
             final ChannelPipeline pipeline = pipeline();
             //PooledByteBufAllocator为Netty中的内存池，用来管理堆外内存DirectByteBuffer。
             //PooledByteBufAllocator 具体用于实际分配ByteBuf的分配器
@@ -159,8 +182,11 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                     //利用PooledByteBufAllocator分配合适大小的byteBuf 初始大小为2048
                     byteBuf = allocHandle.allocate(allocator);
                     //记录本次读取了多少字节数
+                    // [RST] 在读取Channel中的数据时会抛出IOExcetion异常
                     allocHandle.lastBytesRead(doReadBytes(byteBuf));
-                    //如果本次没有读取到任何字节，则退出循环 进行下一轮事件轮询
+                    // 如果本次没有读取到任何字节，则退出循环 进行下一轮事件轮询
+                    // -1 表示客户端主动关闭了连接close或者shutdownOutput 这里均会返回-1
+                    // -1 只是一个状态，如果应用层不对这个状态进行一些处理（比如关闭连接之类的），那么JDK NIO Selector 会不停的通知 OP_READ 事件活跃，因为 read 返回的-1在selector看来也是可读事件，只有0是不可读的事件
                     if (allocHandle.lastBytesRead() <= 0) {
                         // nothing was read. release the buffer.
                         byteBuf.release();
@@ -190,9 +216,12 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                 pipeline.fireChannelReadComplete();
 
                 if (close) {
+                    // 此时客户端发送fin1（fi_wait_1状态）主动关闭连接，服务端接收到fin，并回复ack进入close_wait状态
+                    // 在服务端进入close_wait状态 需要调用close 方法向客户端发送fin_ack，服务端才能结束close_wait状态
                     closeOnRead(pipeline);
                 }
             } catch (Throwable t) {
+                // 当 doReadBytes 方法抛出 IOException 异常后，会被 catch(){...} 语句捕获到，随后在 handleReadException 方法中处理 TCP 异常关闭的情况
                 handleReadException(pipeline, byteBuf, t, close, allocHandle);
             } finally {
                 // Check if there is a readPending which was not processed yet.

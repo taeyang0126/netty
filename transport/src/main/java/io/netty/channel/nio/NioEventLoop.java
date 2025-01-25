@@ -204,8 +204,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
         // 如果不是jdk提供的，那么不进行优化处理
         if (!(maybeSelectorImplClass instanceof Class) ||
-            // ensure the current selector implementation is what we can instrument.
-            !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
+                // ensure the current selector implementation is what we can instrument.
+                !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
             if (maybeSelectorImplClass instanceof Throwable) {
                 Throwable t = (Throwable) maybeSelectorImplClass;
                 logger.trace("failed to instrument a special java.util.Set into: {}", unwrappedSelector, t);
@@ -271,7 +271,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         selectedKeys = selectedKeySet;
         logger.trace("instrumented a special java.util.Set into: {}", unwrappedSelector);
         return new SelectorTuple(unwrappedSelector,
-                                 new SelectedSelectionKeySetSelector(unwrappedSelector, selectedKeySet));
+                new SelectedSelectionKeySetSelector(unwrappedSelector, selectedKeySet));
     }
 
     /**
@@ -456,43 +456,43 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                     //根据轮询策略获取轮询结果 这里的hasTasks()主要检查的是普通队列和尾部队列中是否有异步任务等待执行
                     strategy = selectStrategy.calculateStrategy(selectNowSupplier, hasTasks());
                     switch (strategy) {
-                    case SelectStrategy.CONTINUE:
-                        continue;
+                        case SelectStrategy.CONTINUE:
+                            continue;
 
-                    case SelectStrategy.BUSY_WAIT:
-                        // NIO不支持自旋（BUSY_WAIT）
-                        // fall-through to SELECT since the busy-wait is not supported with NIO
+                        case SelectStrategy.BUSY_WAIT:
+                            // NIO不支持自旋（BUSY_WAIT）
+                            // fall-through to SELECT since the busy-wait is not supported with NIO
 
-                    // 核心逻辑是有任务需要执行，则Reactor线程立马执行异步任务，如果没有异步任务执行，则进行轮询IO事件
-                    case SelectStrategy.SELECT:
-                        //当前没有异步任务执行，Reactor线程可以放心的阻塞等待IO就绪事件
+                            // 核心逻辑是有任务需要执行，则Reactor线程立马执行异步任务，如果没有异步任务执行，则进行轮询IO事件
+                        case SelectStrategy.SELECT:
+                            //当前没有异步任务执行，Reactor线程可以放心的阻塞等待IO就绪事件
 
-                        //从定时任务队列中取出即将快要执行的定时任务deadline
-                        long curDeadlineNanos = nextScheduledTaskDeadlineNanos();
-                        if (curDeadlineNanos == -1L) {
-                            // -1代表当前定时任务队列中没有定时任务
-                            curDeadlineNanos = NONE; // nothing on the calendar
-                        }
-
-                        //最早执行定时任务的deadline作为 select的阻塞时间，意思是到了定时任务的执行时间
-                        //不管有无IO就绪事件，必须唤醒selector，从而使reactor线程执行定时任务
-                        nextWakeupNanos.set(curDeadlineNanos);
-                        try {
-                            if (!hasTasks()) {
-                                //再次检查普通任务队列中是否有异步任务
-                                //没有的话开始select阻塞轮询IO就绪事件
-                                strategy = select(curDeadlineNanos);
+                            //从定时任务队列中取出即将快要执行的定时任务deadline
+                            long curDeadlineNanos = nextScheduledTaskDeadlineNanos();
+                            if (curDeadlineNanos == -1L) {
+                                // -1代表当前定时任务队列中没有定时任务
+                                curDeadlineNanos = NONE; // nothing on the calendar
                             }
-                        } finally {
-                            // 执行到这里说明Reactor已经从Selector上被唤醒了
-                            // 设置Reactor的状态为苏醒状态AWAKE
-                            // lazySet优化不必要的volatile操作，不使用内存屏障，不保证写操作的可见性（单线程不需要保证）
-                            // This update is just to help block unnecessary selector wakeups
-                            // so use of lazySet is ok (no race condition)
-                            nextWakeupNanos.lazySet(AWAKE);
-                        }
-                        // fall through
-                    default:
+
+                            //最早执行定时任务的deadline作为 select的阻塞时间，意思是到了定时任务的执行时间
+                            //不管有无IO就绪事件，必须唤醒selector，从而使reactor线程执行定时任务
+                            nextWakeupNanos.set(curDeadlineNanos);
+                            try {
+                                if (!hasTasks()) {
+                                    //再次检查普通任务队列中是否有异步任务
+                                    //没有的话开始select阻塞轮询IO就绪事件
+                                    strategy = select(curDeadlineNanos);
+                                }
+                            } finally {
+                                // 执行到这里说明Reactor已经从Selector上被唤醒了
+                                // 设置Reactor的状态为苏醒状态AWAKE
+                                // lazySet优化不必要的volatile操作，不使用内存屏障，不保证写操作的可见性（单线程不需要保证）
+                                // This update is just to help block unnecessary selector wakeups
+                                // so use of lazySet is ok (no race condition)
+                                nextWakeupNanos.lazySet(AWAKE);
+                            }
+                            // fall through
+                        default:
                     }
                 } catch (IOException e) {
                     // If we receive an IOException here its because the Selector is messed up. Let's rebuild
@@ -577,9 +577,11 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                     // 设置了优雅关闭状态，这里处理优雅关闭
                     if (isShuttingDown()) {
                         // 删除注册的感兴趣事件 & 关闭底层的channel
+                        // 关闭Reactor上注册的所有Channel,停止处理IO事件，触发unActive以及unRegister事件
                         closeAll();
                         // 判断taskQueue或者hook是否执行完成，如果有任务还在执行，或者上次任务执行时间距今在一个静默期内，那么这里返回false，表示继续走一轮循环，处理优雅关闭
                         // 反之结束整个优雅关闭的处理
+                        // 注销掉所有Channel停止处理IO事件之后，剩下的就需要执行Reactor中剩余的异步任务了
                         if (confirmShutdown()) {
                             return;
                         }
@@ -736,7 +738,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 // null out entries in the array to allow to have it GC'ed once the Channel close
                 // See https://github.com/netty/netty/issues/2363
                 selectedKeys.reset(i + 1);
-
+                // 如果 needsToSelectAgain = true ，那么就会立马执行一次 selector.selectNow() ，
+                // 目的就是为了清除 Selector 中已经注销的 Selectionkey ，从而保证IO就绪集合 selectedKeys 的有效性
                 selectAgain();
                 i = -1;
             }
@@ -815,27 +818,29 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             state = 2;
         } finally {
             switch (state) {
-            case 0:
-                k.cancel();
-                invokeChannelUnregistered(task, k, null);
-                break;
-            case 1:
-                if (!k.isValid()) { // Cancelled by channelReady()
+                case 0:
+                    k.cancel();
                     invokeChannelUnregistered(task, k, null);
-                }
-                break;
-            default:
-                 break;
+                    break;
+                case 1:
+                    if (!k.isValid()) { // Cancelled by channelReady()
+                        invokeChannelUnregistered(task, k, null);
+                    }
+                    break;
+                default:
+                    break;
             }
         }
     }
 
     private void closeAll() {
-        // 把注册在 selector 上的所有 Channel 都关闭
+        // 这里的目的是清理selector中的一些无效key
         selectAgain();
+        // 获取Selector上注册的所有Channel
         Set<SelectionKey> keys = selector.keys();
         Collection<AbstractNioChannel> channels = new ArrayList<AbstractNioChannel>(keys.size());
         for (SelectionKey k: keys) {
+            // 获取NioSocketChannel
             Object a = k.attachment();
             if (a instanceof AbstractNioChannel) {
                 channels.add((AbstractNioChannel) a);
@@ -849,6 +854,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
         // 关闭这个selector下的所有channel
         for (AbstractNioChannel ch: channels) {
+            //关闭Reactor上注册的所有Channel，并在pipeline中触发unActive事件和unRegister事件
             ch.unsafe().close(ch.unsafe().voidPromise());
         }
     }

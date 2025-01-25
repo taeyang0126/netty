@@ -276,6 +276,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     @SuppressJava6Requirement(reason = "Usage guarded by java version check")
     private void shutdownInput0() throws Exception {
         if (PlatformDependent.javaVersion() >= 7) {
+            //调用底层JDK socketChannel关闭接收方向的通道
             javaChannel().shutdownInput();
         } else {
             javaChannel().socket().shutdownInput();
@@ -348,6 +349,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     protected int doReadBytes(ByteBuf byteBuf) throws Exception {
         final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
         allocHandle.attemptedBytesRead(byteBuf.writableBytes());
+        // 读到EOF后，这里会返回-1
         return byteBuf.writeBytes(javaChannel(), allocHandle.attemptedBytesRead());
     }
 
@@ -448,12 +450,22 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         @Override
         protected Executor prepareToClose() {
             try {
+                // 配置 SO_LINGER 的原因是： 主动关闭的一方不想等对方的FIN了，也不想进入2MSL的time_wait状态，导致端口无法重用，所以使用so_linger直接走RST关闭连接
                 if (javaChannel().isOpen() && config().getSoLinger() > 0) {
                     // We need to cancel this key of the channel so we may not end up in a eventloop spin
                     // because we try to read or write until the actual close happens which may be later due
                     // SO_LINGER handling.
                     // See https://github.com/netty/netty/issues/4449
+                    // 在设置SO_LINGER后，channel会延时关闭，在延时期间我们仍然可以进行读写，这样会导致io线程eventloop不断的循环浪费cpu资源
+                    // 所以需要在延时关闭期间 将channel注册的事件全部取消。
+                    // so_linger See https://mp.weixin.qq.com/s?__biz=Mzg2MzU3Mjc3Ng==&mid=2247485060&idx=1&sn=736360af6eb3a4db496de2d6665ebd3c&chksm=ce77c0c3f90049d5e44692c2cf837e8d85bb28758b243d505c43c48ce703da1edadfc19360b1&cur_album_id=2217816582418956300&scene=190#rd
                     doDeregister();
+
+                    /**
+                     * 设置了SO_LINGER,不管是阻塞socket还是非阻塞socket，在关闭的时候都会发生阻塞，所以这里不能使用Reactor线程来
+                     * 执行关闭任务，否则Reactor线程就会被阻塞。
+                     * （因为这里会阻塞一段时间，然后直接RST断开连接）
+                     * */
                     return GlobalEventExecutor.INSTANCE;
                 }
             } catch (Throwable ignore) {
@@ -461,6 +473,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
                 // getSoLinger() may produce an exception. In this case we just return null.
                 // See https://github.com/netty/netty/issues/4449
             }
+            //在没有设置SO_LINGER的情况下，可以使用Reactor线程来执行关闭任务
             return null;
         }
     }
