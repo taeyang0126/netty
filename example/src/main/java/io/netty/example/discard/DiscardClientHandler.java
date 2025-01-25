@@ -62,6 +62,7 @@ public class DiscardClientHandler extends SimpleChannelInboundHandler<Object> {
     private void generateTraffic() {
         // Flush the outbound buffer to the socket.
         // Once flushed, generate the same amount of traffic again.
+        // 这里需要增加引用计数因为消息写入socket后就会调用release方法
         ctx.writeAndFlush(content.retainedDuplicate()).addListener(trafficGenerator);
     }
 

@@ -468,6 +468,7 @@ public class HashedWheelTimer implements Timer {
                     processCancelledTasks();
                     HashedWheelBucket bucket =
                             wheel[idx];
+                    // 从timeouts队列中取出元素计算剩余循环轮次以及放入槽
                     transferTimeoutsToBuckets();
                     bucket.expireTimeouts(deadline);
                     tick++;
@@ -543,6 +544,7 @@ public class HashedWheelTimer implements Timer {
 
             for (;;) {
                 final long currentTime = System.nanoTime() - startTime;
+                // 1000000ns = 1ms
                 long sleepTimeMs = (deadline - currentTime + 999999) / 1000000;
 
                 if (sleepTimeMs <= 0) {

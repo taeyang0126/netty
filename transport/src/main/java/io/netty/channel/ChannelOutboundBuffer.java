@@ -291,6 +291,7 @@ public final class ChannelOutboundBuffer {
     private boolean remove0(Throwable cause, boolean notifyWritability) {
         Entry e = flushedEntry;
         if (e == null) {
+            // 清空当前reactor线程缓存的所有待发送数据
             clearNioBuffers();
             return false;
         }
@@ -299,17 +300,21 @@ public final class ChannelOutboundBuffer {
         ChannelPromise promise = e.promise;
         int size = e.pendingSize;
 
+        // 从channelOutboundBuffer中删除该Entry节点
         removeEntry(e);
 
         if (!e.cancelled) {
             // only release message, fail and decrement if it was not canceled before.
+            // 释放msg所占用的内存空间
             ReferenceCountUtil.safeRelease(msg);
-
+            // 编辑promise发送失败，并通知相应的Lisener
             safeFail(promise, cause);
+            // 由于msg得到释放，所以需要降低channelOutboundBuffer中的内存占用水位线，并根据notifyWritability决定是否触发ChannelWritabilityChanged事件
             decrementPendingOutboundBytes(size, false, notifyWritability);
         }
 
         // recycle the entry
+        // 回收Entry实例对象
         e.recycle();
 
         return true;
@@ -657,6 +662,8 @@ public final class ChannelOutboundBuffer {
         try {
             inFail = true;
             for (;;) {
+                // 循环清除channelOutboundBuffer中的待发送数据
+                // 将entry从buffer中删除，并释放entry中的bytebuffer，通知promise failed
                 if (!remove0(cause, notify)) {
                     break;
                 }
@@ -688,6 +695,7 @@ public final class ChannelOutboundBuffer {
         }
 
         // Release all unflushed messages.
+        // 循环清理channelOutboundBuffer中的unflushedEntry，因为在执行关闭之前有可能用户有一些数据write进来，需要清理掉
         try {
             Entry e = unflushedEntry;
             while (e != null) {
@@ -696,7 +704,9 @@ public final class ChannelOutboundBuffer {
                 TOTAL_PENDING_SIZE_UPDATER.addAndGet(this, -size);
 
                 if (!e.cancelled) {
+                    // 释放unflushedEntry中的bytebuffer
                     ReferenceCountUtil.safeRelease(e.msg);
+                    // 通知unflushedEntry中的promise failed
                     safeFail(e.promise, cause);
                 }
                 e = e.recycleAndGetNext();
@@ -704,6 +714,7 @@ public final class ChannelOutboundBuffer {
         } finally {
             inFail = false;
         }
+        // 清理channel用于缓存JDK nioBuffer的 threadLocal缓存NIO_BUFFERS
         clearNioBuffers();
     }
 

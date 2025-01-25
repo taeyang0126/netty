@@ -577,9 +577,11 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                     // 设置了优雅关闭状态，这里处理优雅关闭
                     if (isShuttingDown()) {
                         // 删除注册的感兴趣事件 & 关闭底层的channel
+                        // 关闭Reactor上注册的所有Channel,停止处理IO事件，触发unActive以及unRegister事件
                         closeAll();
                         // 判断taskQueue或者hook是否执行完成，如果有任务还在执行，或者上次任务执行时间距今在一个静默期内，那么这里返回false，表示继续走一轮循环，处理优雅关闭
                         // 反之结束整个优雅关闭的处理
+                        // 注销掉所有Channel停止处理IO事件之后，剩下的就需要执行Reactor中剩余的异步任务了
                         if (confirmShutdown()) {
                             return;
                         }
@@ -736,7 +738,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 // null out entries in the array to allow to have it GC'ed once the Channel close
                 // See https://github.com/netty/netty/issues/2363
                 selectedKeys.reset(i + 1);
-
+                // 如果 needsToSelectAgain = true ，那么就会立马执行一次 selector.selectNow() ，
+                // 目的就是为了清除 Selector 中已经注销的 Selectionkey ，从而保证IO就绪集合 selectedKeys 的有效性
                 selectAgain();
                 i = -1;
             }
@@ -831,11 +834,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     private void closeAll() {
-        // 把注册在 selector 上的所有 Channel 都关闭
+        // 这里的目的是清理selector中的一些无效key
         selectAgain();
+        // 获取Selector上注册的所有Channel
         Set<SelectionKey> keys = selector.keys();
         Collection<AbstractNioChannel> channels = new ArrayList<AbstractNioChannel>(keys.size());
         for (SelectionKey k: keys) {
+            // 获取NioSocketChannel
             Object a = k.attachment();
             if (a instanceof AbstractNioChannel) {
                 channels.add((AbstractNioChannel) a);
@@ -849,6 +854,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
         // 关闭这个selector下的所有channel
         for (AbstractNioChannel ch: channels) {
+            //关闭Reactor上注册的所有Channel，并在pipeline中触发unActive事件和unRegister事件
             ch.unsafe().close(ch.unsafe().voidPromise());
         }
     }

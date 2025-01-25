@@ -1422,6 +1422,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
             readIfIsAutoRead();
         }
 
+        // 如果开启了自动读取，则注册感兴趣读事件
+        // 这里由 serverSocketChannel 接收新连接 fireReadComplete 事件时处理的
+        // 接收到一条新连接，如果开启了自动读，那么就注册可读事件
+        // io.netty.channel.AbstractChannel.AbstractUnsafe.beginRead
         private void readIfIsAutoRead() {
             if (channel.config().isAutoRead()) {
                 channel.read();
