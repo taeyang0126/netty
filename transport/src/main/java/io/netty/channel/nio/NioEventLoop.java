@@ -221,7 +221,9 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             @Override
             public Object run() {
                 try {
+                    // 内部使用，可以直接修改
                     Field selectedKeysField = selectorImplClass.getDeclaredField("selectedKeys");
+                    // 外部使用，只读访问 这么设计的原因是避免用户错误操作
                     Field publicSelectedKeysField = selectorImplClass.getDeclaredField("publicSelectedKeys");
 
                     if (PlatformDependent.javaVersion() >= 9 && PlatformDependent.hasUnsafe()) {
