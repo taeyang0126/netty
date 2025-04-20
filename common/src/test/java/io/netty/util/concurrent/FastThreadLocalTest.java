@@ -16,6 +16,7 @@
 
 package io.netty.util.concurrent;
 
+import io.netty.util.internal.InternalThreadLocalMap;
 import io.netty.util.internal.ObjectCleaner;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -28,6 +29,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -53,6 +55,78 @@ public class FastThreadLocalTest {
 
         FastThreadLocal.removeAll();
         assertNull(threadLocal.getIfExists());
+    }
+
+    @Test
+    public void testArray() {
+        final int size = 12;
+        FastThreadLocal<int[]> var = new FastThreadLocal<int[]>() {
+            @Override
+            protected int[] initialValue() throws Exception {
+                return new int[size];
+            }
+        };
+
+        // 初始化
+        int[] ints = var.get();
+        for (int i = 0; i < size; i++) {
+            ints[i] = i;
+        }
+
+        // 重新设置
+        ints = var.get();
+        ints[0] = 100;
+        ints[1] = 101;
+
+        ints = var.get();
+        assertEquals(100, ints[0]);
+        assertEquals(101, ints[1]);
+        assertEquals(10, ints[10]);
+
+    }
+
+    @Test
+    public void testInit() {
+        final String value = "init";
+        FastThreadLocal<String> var = new FastThreadLocal<String>() {
+            @Override
+            protected String initialValue() throws Exception {
+                return value;
+            }
+        };
+
+        assertNull(var.getIfExists());
+        assertEquals(value, var.get());
+        var.remove(InternalThreadLocalMap.get());
+        assertEquals(0, FastThreadLocal.size());
+    }
+
+    @Test
+    public void testRemove() {
+        final AtomicBoolean removed = new AtomicBoolean();
+        final FastThreadLocal<Boolean> var = new FastThreadLocal<Boolean>() {
+            @Override
+            protected void onRemoval(Boolean value) throws Exception {
+                if (value != null) {
+                    removed.set(value);
+                }
+            }
+        };
+        assertNull(var.get());
+        var.remove();
+        assertNull(var.get());
+
+        var.set(Boolean.TRUE);
+        assertTrue(var.get());
+        var.remove();
+        assertNull(var.get());
+        assertTrue(removed.get());
+
+        var.set(Boolean.FALSE);
+        assertFalse(var.get());
+        var.remove();
+        assertNull(var.get());
+        assertFalse(removed.get());
     }
 
     @Test(timeout = 10000)

@@ -35,6 +35,7 @@ public class DefaultFileRegionTest {
     private static final byte[] data = new byte[1048576 * 10];
 
     static {
+        // 生成随机字节填充到data中
         PlatformDependent.threadLocalRandom().nextBytes(data);
     }
 

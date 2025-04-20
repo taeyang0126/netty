@@ -32,6 +32,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 class UnpaddedInternalThreadLocalMap {
 
+    // 对于非FastThreadLocalThread线程，这里使用普通的ThreadLocal，但是内部的值还是使用的InternalThreadLocalMap，这样的话虽然需要需要一次hash查找，但是对于所有的
+    // FastThreadLocal对象而言，也只需要在InternalThreadLocalMap通过数组下标寻找，这样的话能减少冲突，相比普通的性能有所提升
     static final ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = new ThreadLocal<InternalThreadLocalMap>();
     static final AtomicInteger nextIndex = new AtomicInteger();
 

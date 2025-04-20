@@ -252,6 +252,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
      * @throws Exception if an I/O exception occurs during write.
      */
     protected final int doWrite0(ChannelOutboundBuffer in) throws Exception {
+        // 从 flushedEntry 指针中获取一个
         Object msg = in.current();
         if (msg == null) {
             // Directly return here so incompleteWrite(...) is not called.
@@ -278,6 +279,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
             }
         } else if (msg instanceof FileRegion) {
             FileRegion region = (FileRegion) msg;
+            // 已经传输的字节数 >= 总的字节数
             if (region.transferred() >= region.count()) {
                 in.remove();
                 return 0;
@@ -295,6 +297,7 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
             // Should not reach here.
             throw new Error();
         }
+        // 无法写入数据，写满了
         return WRITE_STATUS_SNDBUF_FULL;
     }
 
