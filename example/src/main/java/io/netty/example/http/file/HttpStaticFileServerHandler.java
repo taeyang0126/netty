@@ -190,17 +190,22 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
         }
 
         // Write the initial line and the header.
+        // 先写入一个 http Response
         ctx.write(response);
 
         // Write the content.
         ChannelFuture sendFileFuture;
         ChannelFuture lastContentFuture;
         if (ctx.pipeline().get(SslHandler.class) == null) {
+            // 如果没有使用SSL，直接走sendFile
             sendFileFuture =
                     ctx.write(new DefaultFileRegion(raf.getChannel(), 0, fileLength), ctx.newProgressivePromise());
             // Write the end marker.
+            // 写入 lastHttpContent
             lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
         } else {
+            // 如果有SSL，只能走ChunkFile --> HttpChunkedInput
+            // HttpChunkedInput 会自动写入一个 lastHttpContent
             sendFileFuture =
                     ctx.writeAndFlush(new HttpChunkedInput(new ChunkedFile(raf, 0, fileLength, 8192)),
                             ctx.newProgressivePromise());
