@@ -204,8 +204,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
         // 如果不是jdk提供的，那么不进行优化处理
         if (!(maybeSelectorImplClass instanceof Class) ||
-            // ensure the current selector implementation is what we can instrument.
-            !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
+                // ensure the current selector implementation is what we can instrument.
+                !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
             if (maybeSelectorImplClass instanceof Throwable) {
                 Throwable t = (Throwable) maybeSelectorImplClass;
                 logger.trace("failed to instrument a special java.util.Set into: {}", unwrappedSelector, t);
@@ -221,7 +221,9 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             @Override
             public Object run() {
                 try {
+                    // 内部使用，可以直接修改
                     Field selectedKeysField = selectorImplClass.getDeclaredField("selectedKeys");
+                    // 外部使用，只读访问 这么设计的原因是避免用户错误操作
                     Field publicSelectedKeysField = selectorImplClass.getDeclaredField("publicSelectedKeys");
 
                     if (PlatformDependent.javaVersion() >= 9 && PlatformDependent.hasUnsafe()) {
@@ -271,7 +273,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         selectedKeys = selectedKeySet;
         logger.trace("instrumented a special java.util.Set into: {}", unwrappedSelector);
         return new SelectorTuple(unwrappedSelector,
-                                 new SelectedSelectionKeySetSelector(unwrappedSelector, selectedKeySet));
+                new SelectedSelectionKeySetSelector(unwrappedSelector, selectedKeySet));
     }
 
     /**
@@ -456,43 +458,43 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                     //根据轮询策略获取轮询结果 这里的hasTasks()主要检查的是普通队列和尾部队列中是否有异步任务等待执行
                     strategy = selectStrategy.calculateStrategy(selectNowSupplier, hasTasks());
                     switch (strategy) {
-                    case SelectStrategy.CONTINUE:
-                        continue;
+                        case SelectStrategy.CONTINUE:
+                            continue;
 
-                    case SelectStrategy.BUSY_WAIT:
-                        // NIO不支持自旋（BUSY_WAIT）
-                        // fall-through to SELECT since the busy-wait is not supported with NIO
+                        case SelectStrategy.BUSY_WAIT:
+                            // NIO不支持自旋（BUSY_WAIT）
+                            // fall-through to SELECT since the busy-wait is not supported with NIO
 
-                    // 核心逻辑是有任务需要执行，则Reactor线程立马执行异步任务，如果没有异步任务执行，则进行轮询IO事件
-                    case SelectStrategy.SELECT:
-                        //当前没有异步任务执行，Reactor线程可以放心的阻塞等待IO就绪事件
+                            // 核心逻辑是有任务需要执行，则Reactor线程立马执行异步任务，如果没有异步任务执行，则进行轮询IO事件
+                        case SelectStrategy.SELECT:
+                            //当前没有异步任务执行，Reactor线程可以放心的阻塞等待IO就绪事件
 
-                        //从定时任务队列中取出即将快要执行的定时任务deadline
-                        long curDeadlineNanos = nextScheduledTaskDeadlineNanos();
-                        if (curDeadlineNanos == -1L) {
-                            // -1代表当前定时任务队列中没有定时任务
-                            curDeadlineNanos = NONE; // nothing on the calendar
-                        }
-
-                        //最早执行定时任务的deadline作为 select的阻塞时间，意思是到了定时任务的执行时间
-                        //不管有无IO就绪事件，必须唤醒selector，从而使reactor线程执行定时任务
-                        nextWakeupNanos.set(curDeadlineNanos);
-                        try {
-                            if (!hasTasks()) {
-                                //再次检查普通任务队列中是否有异步任务
-                                //没有的话开始select阻塞轮询IO就绪事件
-                                strategy = select(curDeadlineNanos);
+                            //从定时任务队列中取出即将快要执行的定时任务deadline
+                            long curDeadlineNanos = nextScheduledTaskDeadlineNanos();
+                            if (curDeadlineNanos == -1L) {
+                                // -1代表当前定时任务队列中没有定时任务
+                                curDeadlineNanos = NONE; // nothing on the calendar
                             }
-                        } finally {
-                            // 执行到这里说明Reactor已经从Selector上被唤醒了
-                            // 设置Reactor的状态为苏醒状态AWAKE
-                            // lazySet优化不必要的volatile操作，不使用内存屏障，不保证写操作的可见性（单线程不需要保证）
-                            // This update is just to help block unnecessary selector wakeups
-                            // so use of lazySet is ok (no race condition)
-                            nextWakeupNanos.lazySet(AWAKE);
-                        }
-                        // fall through
-                    default:
+
+                            //最早执行定时任务的deadline作为 select的阻塞时间，意思是到了定时任务的执行时间
+                            //不管有无IO就绪事件，必须唤醒selector，从而使reactor线程执行定时任务
+                            nextWakeupNanos.set(curDeadlineNanos);
+                            try {
+                                if (!hasTasks()) {
+                                    //再次检查普通任务队列中是否有异步任务
+                                    //没有的话开始select阻塞轮询IO就绪事件
+                                    strategy = select(curDeadlineNanos);
+                                }
+                            } finally {
+                                // 执行到这里说明Reactor已经从Selector上被唤醒了
+                                // 设置Reactor的状态为苏醒状态AWAKE
+                                // lazySet优化不必要的volatile操作，不使用内存屏障，不保证写操作的可见性（单线程不需要保证）
+                                // This update is just to help block unnecessary selector wakeups
+                                // so use of lazySet is ok (no race condition)
+                                nextWakeupNanos.lazySet(AWAKE);
+                            }
+                            // fall through
+                        default:
                     }
                 } catch (IOException e) {
                     // If we receive an IOException here its because the Selector is messed up. Let's rebuild
@@ -793,6 +795,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             // Process OP_WRITE first as we may be able to write some queued buffers and so free memory.
             if ((readyOps & SelectionKey.OP_WRITE) != 0) {
                 // Call forceFlush which will also take care of clear the OP_WRITE once there is nothing left to write
+                // 监听到可写的时间，这里执行下flush，继续向socket写入数据
                 ch.unsafe().forceFlush();
             }
 
@@ -818,17 +821,17 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             state = 2;
         } finally {
             switch (state) {
-            case 0:
-                k.cancel();
-                invokeChannelUnregistered(task, k, null);
-                break;
-            case 1:
-                if (!k.isValid()) { // Cancelled by channelReady()
+                case 0:
+                    k.cancel();
                     invokeChannelUnregistered(task, k, null);
-                }
-                break;
-            default:
-                 break;
+                    break;
+                case 1:
+                    if (!k.isValid()) { // Cancelled by channelReady()
+                        invokeChannelUnregistered(task, k, null);
+                    }
+                    break;
+                default:
+                    break;
             }
         }
     }

@@ -26,6 +26,7 @@ import io.netty.channel.SelectStrategyFactory;
 import io.netty.channel.SingleThreadEventLoop;
 import io.netty.channel.socket.ServerSocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.IntSupplier;
 import io.netty.util.concurrent.DefaultEventExecutorChooserFactory;
 import io.netty.util.concurrent.DefaultThreadFactory;
@@ -74,6 +75,7 @@ public class NioEventLoopTest extends AbstractEventLoopTest {
             loop.register(channel).syncUninterruptibly();
 
             Selector selector = loop.unwrappedSelector();
+            assertSame(loop, channel.eventLoop());
             assertSame(selector, ((NioEventLoop) channel.eventLoop()).unwrappedSelector());
             assertTrue(selector.isOpen());
 

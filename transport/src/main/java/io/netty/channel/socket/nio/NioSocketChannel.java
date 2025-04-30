@@ -365,14 +365,20 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         return region.transferTo(javaChannel(), position);
     }
 
-    private void adjustMaxBytesPerGatheringWrite(int attempted, int written, int oldMaxBytesPerGatheringWrite) {
+    private void adjustMaxBytesPerGatheringWrite(
+            int attempted,     // 尝试写入的字节数
+            int written,       // 实际写入的字节数
+            int oldMaxBytesPerGatheringWrite        // 当前的最大写入字节数
+    ) {
         // By default we track the SO_SNDBUF when ever it is explicitly set. However some OSes may dynamically change
         // SO_SNDBUF (and other characteristics that determine how much data can be written at once) so we should try
         // make a best effort to adjust as OS behavior changes.
+        // 场景1: 完全写入 - 说明网络状况良好，可以尝试提高限制
         if (attempted == written) {
             if (attempted << 1 > oldMaxBytesPerGatheringWrite) {
                 ((NioSocketChannelConfig) config).setMaxBytesPerGatheringWrite(attempted << 1);
             }
+            // 场景2: 写入不足一半 - 说明网络拥塞，需要降低限制
         } else if (attempted > MAX_BYTES_PER_GATHERING_WRITE_ATTEMPTED_LOW_THRESHOLD && written < attempted >>> 1) {
             ((NioSocketChannelConfig) config).setMaxBytesPerGatheringWrite(attempted >>> 1);
         }
@@ -381,6 +387,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
         SocketChannel ch = javaChannel();
+        // 默认最大可写入16次
         int writeSpinCount = config().getWriteSpinCount();
         do {
             if (in.isEmpty()) {
@@ -391,6 +398,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
             }
 
             // Ensure the pending writes are made of ByteBufs only.
+            // 一般是 socket#sndBuf 的2倍，因为系统写入的速度可能比我们提供的要快，这里设置为2倍
             int maxBytesPerGatheringWrite = ((NioSocketChannelConfig) config).getMaxBytesPerGatheringWrite();
             ByteBuffer[] nioBuffers = in.nioBuffers(1024, maxBytesPerGatheringWrite);
             int nioBufferCnt = in.nioBufferCount();
@@ -400,6 +408,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
             switch (nioBufferCnt) {
                 case 0:
                     // We have something else beside ByteBuffers to write so fallback to normal writes.
+                    // 没有一个 ByteBuffer，说明是非 ByteBuf 的消息，可能是 FileRegion等 其他消息
                     writeSpinCount -= doWrite0(in);
                     break;
                 case 1: {
@@ -410,6 +419,9 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
                     int attemptedBytes = buffer.remaining();
                     final int localWrittenBytes = ch.write(buffer);
                     if (localWrittenBytes <= 0) {
+                        // socket 缓冲区满了，注册可写事件，等待下次可写时继续
+                        // socket将skb发送到网卡，网卡发送完成后触发中断会移除掉skb，缓冲区就可写了，会发出可写事件，由NioEventLoop
+                        // 监听到此事件再调用 flush0 继续发送数据
                         incompleteWrite(true);
                         return;
                     }
@@ -422,6 +434,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
                     // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
                     // to check if the total size of all the buffers is non-zero.
                     // We limit the max amount to int above so cast is safe
+                    // 一次写入多个
                     long attemptedBytes = in.nioBufferSize();
                     final long localWrittenBytes = ch.write(nioBuffers, 0, nioBufferCnt);
                     if (localWrittenBytes <= 0) {
@@ -438,6 +451,8 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
             }
         } while (writeSpinCount > 0);
 
+        // writeSpinCount < 0 说明无法向socket写入数据了，socket缓冲区已满，需要注册可写事件
+        // writeSpinCount = 0 说明16次写完了，可能还有数据没有写完，会注册一个task继续flush
         incompleteWrite(writeSpinCount < 0);
     }
 

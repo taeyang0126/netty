@@ -43,6 +43,7 @@ import java.util.Set;
  */
 public class FastThreadLocal<V> {
 
+    // 这里 variablesToRemoveIndex=0 用来存放此线程用到的所有的FastThreadLocal对象，方便删除
     private static final int variablesToRemoveIndex = InternalThreadLocalMap.nextVariableIndex();
 
     /**

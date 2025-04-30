@@ -76,19 +76,25 @@ public final class ChannelOutboundBuffer {
     // Entry(flushedEntry) --> ... Entry(unflushedEntry) --> ... Entry(tailEntry)
     //
     // The Entry that is the first in the linked-list structure that was flushed
+    // 第一个待发送的Entry
     private Entry flushedEntry;
     // The Entry which is the first unflushed in the linked-list structure
+    // 第一个未flush的Entry
     private Entry unflushedEntry;
     // The Entry which represents the tail of the buffer
+    // 最后一个Entry
     private Entry tailEntry;
     // The number of flushed entries that are not written yet
+    // 已经flush的数量
     private int flushed;
 
+    // 记录当前这个时刻 ByteBuffer 的数量
     private int nioBufferCount;
     private long nioBufferSize;
 
     private boolean inFail;
 
+    // 维护了这个ChannelOutbound待发送的数据大小
     private static final AtomicLongFieldUpdater<ChannelOutboundBuffer> TOTAL_PENDING_SIZE_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ChannelOutboundBuffer.class, "totalPendingSize");
 
@@ -173,6 +179,7 @@ public final class ChannelOutboundBuffer {
         }
 
         long newWriteBufferSize = TOTAL_PENDING_SIZE_UPDATER.addAndGet(this, size);
+        // 如果待发送的数据大小超过最高水位线
         if (newWriteBufferSize > channel.config().getWriteBufferHighWaterMark()) {
             setUnwritable(invokeLater);
         }
@@ -264,16 +271,21 @@ public final class ChannelOutboundBuffer {
         ChannelPromise promise = e.promise;
         int size = e.pendingSize;
 
+        // flushedEntry 指针后移
         removeEntry(e);
 
         if (!e.cancelled) {
             // only release message, notify and decrement if it was not canceled before.
+            // 释放内存
             ReferenceCountUtil.safeRelease(msg);
+            // 通知promise
             safeSuccess(promise);
+            // 减去等待发送的数据量(totalPendingSize)，可能触发事件等
             decrementPendingOutboundBytes(size, false, true);
         }
 
         // recycle the entry
+        // 回收这个entry
         e.recycle();
 
         return true;
@@ -339,6 +351,7 @@ public final class ChannelOutboundBuffer {
      */
     public void removeBytes(long writtenBytes) {
         for (;;) {
+            // 当前flushEntry
             Object msg = current();
             if (!(msg instanceof ByteBuf)) {
                 assert writtenBytes == 0;
@@ -349,13 +362,18 @@ public final class ChannelOutboundBuffer {
             final int readerIndex = buf.readerIndex();
             final int readableBytes = buf.writerIndex() - readerIndex;
 
+            // 当前这个 ByteBuf 全被写入成功了
             if (readableBytes <= writtenBytes) {
                 if (writtenBytes != 0) {
+                    // 触发 ChannelProgressivePromise
                     progress(readableBytes);
+                    // 减去当前这个entry可读的数量
                     writtenBytes -= readableBytes;
                 }
+                // 移除这个entry
                 remove();
             } else { // readableBytes > writtenBytes
+                // 当前这个 ByteBuf 还没有写入完全，调整 readerIndex
                 if (writtenBytes != 0) {
                     buf.readerIndex(readerIndex + (int) writtenBytes);
                     progress(writtenBytes);
@@ -363,6 +381,7 @@ public final class ChannelOutboundBuffer {
                 break;
             }
         }
+        // 移除 NIO_BUFFERS 中的 ByteBuffer[]，下次会重新读取
         clearNioBuffers();
     }
 
@@ -412,6 +431,8 @@ public final class ChannelOutboundBuffer {
         final InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();
         ByteBuffer[] nioBuffers = NIO_BUFFERS.get(threadLocalMap);
         Entry entry = flushedEntry;
+        // 从 flushedEntry 开始往下找，一直找到不是 ByteBuf 的消息
+        // 除了 ByteBuf 外，还有 FileRegion 等消息，这里的目标就是找到最大连续的 ByteBuf 消息，方便合并发送，节省系统调用
         while (isFlushedEntry(entry) && entry.msg instanceof ByteBuf) {
             if (!entry.cancelled) {
                 ByteBuf buf = (ByteBuf) entry.msg;
@@ -437,6 +458,7 @@ public final class ChannelOutboundBuffer {
                     int count = entry.count;
                     if (count == -1) {
                         //noinspection ConstantValueVariableUse
+                        // count == -1 说明是刚刚加入的 entry，这个获取了下此条消息的 bytebuffer 的数量
                         entry.count = count = buf.nioBufferCount();
                     }
                     int neededSpace = min(maxCount, nioBufferCount + count);
@@ -445,6 +467,7 @@ public final class ChannelOutboundBuffer {
                         NIO_BUFFERS.set(threadLocalMap, nioBuffers);
                     }
                     if (count == 1) {
+                        // 此条消息只有一个 byteBuffer
                         ByteBuffer nioBuf = entry.buf;
                         if (nioBuf == null) {
                             // cache ByteBuffer as it may need to create a new ByteBuffer instance if its a
@@ -453,6 +476,7 @@ public final class ChannelOutboundBuffer {
                         }
                         nioBuffers[nioBufferCount++] = nioBuf;
                     } else {
+                        // 此条消息有多个 ByteBuffer
                         // The code exists in an extra method to ensure the method is not too big to inline as this
                         // branch is not very likely to get hit very frequently.
                         nioBufferCount = nioBuffers(entry, buf, nioBuffers, nioBufferCount, maxCount);
@@ -609,6 +633,7 @@ public final class ChannelOutboundBuffer {
             final int newValue = oldValue | 1;
             if (UNWRITABLE_UPDATER.compareAndSet(this, oldValue, newValue)) {
                 if (oldValue == 0) {
+                    // 触发写状态变更事件
                     fireChannelWritabilityChanged(invokeLater);
                 }
                 break;
@@ -825,6 +850,9 @@ public final class ChannelOutboundBuffer {
         long progress;
         long total;
         int pendingSize;
+        // count = -1: 消息刚被添加，还未尝试写入
+        // count = 0:  消息写入完成
+        // count > 0:  消息部分写入，表示还剩多少bytebuffer没有写入
         int count = -1;
         boolean cancelled;
 
