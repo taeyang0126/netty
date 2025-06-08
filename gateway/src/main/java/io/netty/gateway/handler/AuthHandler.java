@@ -46,6 +46,7 @@ public class AuthHandler extends SimpleChannelInboundHandler<GatewayMessage> {
 
             // 构建 session
             Session session = sessionManager.createSession(msg.getClientId(), ctx.channel());
+            session.setAuthenticated(true);
             logger.info("New session created: sessionId={}, clientId={}", session.getId(), msg.getClientId());
 
             // response

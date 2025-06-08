@@ -50,6 +50,7 @@ public class GatewayServerHandler extends ChannelInboundHandlerAdapter {
                     break;
                 default:
                     logger.warn("Unknown message type: {}", message.getMsgType());
+                    handleError(ctx, message, new IllegalArgumentException("Unknown message type"));
             }
         } catch (Exception e) {
             logger.error("Handle message error", e);

@@ -11,8 +11,8 @@ import io.netty.gateway.protocol.GatewayMessage;
  */
 public class DefaultAuthService implements AuthService {
 
-    private final String TOKEN_NAME = "x-token";
-    private final String TOKEN_VALUE = "013dc334-9e05-43ee-b05a-c3e1c7d59407";
+    public static final String TOKEN_NAME = "x-token";
+    public static final String TOKEN_VALUE = "013dc334-9e05-43ee-b05a-c3e1c7d59407";
 
     @Override
     public boolean authenticate(GatewayMessage msg) {
