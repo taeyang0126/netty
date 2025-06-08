@@ -46,9 +46,9 @@ public class GatewayServer {
         this.bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
         this.workerGroup = new MultiThreadIoEventLoopGroup(NioIoHandler.newFactory());
         this.sessionManager = new DefaultSessionManager();
-        this.registry = new DefaultServiceRegistry();
-        this.loadBalancer = new RoundRobinLoadBalancer();
         this.connectionManager = new DefaultConnectionManager();
+        this.registry = new DefaultServiceRegistry(connectionManager);
+        this.loadBalancer = new RoundRobinLoadBalancer();
         this.routeService = new DefaultRouteService(registry, loadBalancer, connectionManager);
         this.authHandler = new AuthHandler(new DefaultAuthService(), sessionManager);
     }

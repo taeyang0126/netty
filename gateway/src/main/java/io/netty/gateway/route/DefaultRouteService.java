@@ -22,8 +22,8 @@ public class DefaultRouteService implements RouteService {
     private final LoadBalancer loadBalancer;
     private final ConnectionManager connectionManager;
 
-    private static final String ERROR_BIZ_TYPE_REQUIRED = "bizType is required";
-    private static final String ERROR_SERVICE_NOT_FOUND = "service %s not found";
+    public static final String ERROR_BIZ_TYPE_REQUIRED = "bizType is required";
+    public static final String ERROR_SERVICE_NOT_FOUND = "service %s not found";
 
     public DefaultRouteService(ServiceRegistry registry, LoadBalancer loadBalancer, ConnectionManager connectionManager) {
         this.registry = registry;

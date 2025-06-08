@@ -1,5 +1,6 @@
 package io.netty.gateway.route;
 
+import io.netty.gateway.route.connection.ConnectionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,8 +24,10 @@ public class DefaultServiceRegistry implements ServiceRegistry {
     private final ConcurrentMap<String, List<ServiceInstance>> serviceMap = new ConcurrentHashMap<>();
     private final ScheduledExecutorService healthCheckExecutor;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final ConnectionManager connectionManager;
 
-    public DefaultServiceRegistry() {
+    public DefaultServiceRegistry(ConnectionManager connectionManager) {
+        this.connectionManager = connectionManager;
         this.healthCheckExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "service-registry-health-check");
             t.setDaemon(true);
@@ -51,6 +54,8 @@ public class DefaultServiceRegistry implements ServiceRegistry {
             }
             if (!existingInstances.contains(instance)) {
                 existingInstances.add(instance);
+                // 添加了之后就去连接这个节点
+                connectionManager.getConnection(instance);
                 logger.info("Registered service instance [{}] for bizType [{}]", instance, bizType);
             }
             return existingInstances;

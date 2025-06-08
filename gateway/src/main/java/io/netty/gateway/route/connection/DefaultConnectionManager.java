@@ -11,14 +11,12 @@ import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.gateway.route.ServiceInstance;
-import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.internal.logging.InternalLogger;
-import io.netty.util.internal.logging.InternalLoggerFactory;
+import io.netty.handler.codec.http.HttpClientCodec;
+import io.netty.handler.codec.http.HttpObjectAggregator;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -28,7 +26,6 @@ import java.util.concurrent.TimeUnit;
  * @author 伍磊
  */
 public class DefaultConnectionManager implements ConnectionManager {
-    private static final InternalLogger logger = InternalLoggerFactory.getInstance(DefaultConnectionManager.class);
 
     private final Map<ServiceInstance, Connection> connections;
     private final EventLoopGroup workerGroup;
@@ -53,8 +50,8 @@ public class DefaultConnectionManager implements ConnectionManager {
                     @Override
                     protected void initChannel(NioSocketChannel ch) {
                         ChannelPipeline pipeline = ch.pipeline();
-                        pipeline.addLast(new IdleStateHandler(0, 20, 0, TimeUnit.SECONDS));
-                        // TODO: 添加其他处理器
+                        pipeline.addLast(new HttpClientCodec());
+                        pipeline.addLast(new HttpObjectAggregator(65536));
                     }
                 });
     }
@@ -95,6 +92,8 @@ public class DefaultConnectionManager implements ConnectionManager {
                     if (f.isSuccess()) {
                         Channel channel = f.channel();
                         Connection connection = new DefaultConnection(bootstrap, channel, instance);
+                        // 添加 HTTP 协议转换处理器
+                        channel.pipeline().addLast(new HttpConnectionHandler(connection));
                         connections.put(instance, connection);
                         future.complete(connection);
                     } else {

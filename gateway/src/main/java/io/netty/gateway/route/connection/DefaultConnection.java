@@ -4,8 +4,6 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.gateway.protocol.GatewayMessage;
 import io.netty.gateway.route.ServiceInstance;
-import io.netty.handler.timeout.IdleState;
-import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -101,22 +99,6 @@ public class DefaultConnection implements Connection {
     }
 
     private void setupChannel() {
-        ChannelPipeline pipeline = channel.pipeline();
-
-        // IdleStateHandler
-        pipeline.addLast(new ChannelInboundHandlerAdapter() {
-            @Override
-            public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
-                if (evt instanceof IdleStateEvent) {
-                    IdleStateEvent event = (IdleStateEvent) evt;
-                    if (event.state() == IdleState.WRITER_IDLE) {
-                        // TODO 心跳
-                    }
-                }
-                super.userEventTriggered(ctx, evt);
-            }
-        });
-
         // 处理连接关闭
         channel.closeFuture().addListener(future -> {
             // 非手动关闭再重连
