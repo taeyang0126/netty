@@ -38,7 +38,7 @@ public class DefaultRouteService implements RouteService {
     public CompletableFuture<GatewayMessage> route(GatewayMessage message) {
         CompletableFuture<GatewayMessage> future = new CompletableFuture<>();
         String bizType = message.getBizType();
-        
+
         if (StringUtil.isNullOrEmpty(bizType)) {
             logger.error("Business type is missing for message: {}", message.getRequestId());
             future.completeExceptionally(new IllegalArgumentException(ERROR_BIZ_TYPE_REQUIRED));
@@ -70,7 +70,7 @@ public class DefaultRouteService implements RouteService {
                         logger.error("Failed to get connection for instance: " + instance, throwable);
                         future.completeExceptionally(throwable);
                     } else {
-                        logger.debug("Sending message to instance: {}, requestId: {}", 
+                        logger.debug("Sending message to instance: {}, requestId: {}",
                                 instance, message.getRequestId());
                         conn.send(message)
                                 .whenComplete((resp, err) -> {
@@ -86,5 +86,15 @@ public class DefaultRouteService implements RouteService {
                 });
 
         return future;
+    }
+
+    @Override
+    public ServiceRegistry getServiceRegistry() {
+        return this.registry;
+    }
+
+    @Override
+    public ConnectionManager getConnectionManager() {
+        return this.connectionManager;
     }
 }

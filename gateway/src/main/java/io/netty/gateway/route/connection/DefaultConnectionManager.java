@@ -13,10 +13,18 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.gateway.route.ServiceInstance;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.util.concurrent.DefaultThreadFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -26,18 +34,32 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author 伍磊
  */
 public class DefaultConnectionManager implements ConnectionManager {
+    private static final Logger logger = LoggerFactory.getLogger(DefaultConnectionManager.class);
 
     private final Map<ServiceInstance, Connection> connections;
+    // 一个静态的、线程安全的 Map，用于缓存正在进行的连接尝试。
+    private final Map<ServiceInstance, CompletableFuture<Connection>> pendingConnections;
     private final EventLoopGroup workerGroup;
     private final Bootstrap bootstrap;
     private volatile boolean closed;
+    private final ExecutorService createConnectionExecutor;
 
     public DefaultConnectionManager() {
         this.connections = new ConcurrentHashMap<>();
+        this.pendingConnections = new ConcurrentHashMap<>();
         this.workerGroup = new MultiThreadIoEventLoopGroup(Runtime.getRuntime().availableProcessors() * 2,
                 NioIoHandler.newFactory());
         this.bootstrap = new Bootstrap();
         this.closed = false;
+        // 创建业务线程池，线程数可配置
+        this.createConnectionExecutor = new ThreadPoolExecutor(
+                1,
+                2,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(10),
+                new DefaultThreadFactory("upstream-connection-create"),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
 
         // 初始化Bootstrap
         bootstrap.group(workerGroup)
@@ -73,35 +95,43 @@ public class DefaultConnectionManager implements ConnectionManager {
     }
 
     private CompletableFuture<Connection> createConnection(ServiceInstance instance) {
-        CompletableFuture<Connection> future = new CompletableFuture<>();
+        // 使用 computeIfAbsent 实现原子性的“检查并创建”。
+        // 这个方法会保证对于同一个 instance，内部的 lambda 表达式只会被执行一次。
+        return pendingConnections.computeIfAbsent(instance, key -> {
 
-        bootstrap.connect(instance.getHost(), instance.getPort())
-                .addListener((ChannelFutureListener) f -> {
+            // --- 这部分代码块是线程安全的，只有第一个线程会进入 ---
 
-                    Connection oldConnection = connections.get(instance);
-                    if (oldConnection != null && oldConnection.isActive()) {
-                        future.complete(oldConnection);
-                        return;
-                    }
+            logger.info("Creating new connection for {}", key);
+            CompletableFuture<Connection> future = new CompletableFuture<>();
 
-                    if (f.isCancelled()) {
-                        future.completeExceptionally(new RuntimeException("Connection cancelled"));
-                        return;
-                    }
+            try {
+                createConnectionExecutor.execute(() -> {
+                    bootstrap.connect(key.getHost(), key.getPort())
+                            .addListener((ChannelFutureListener) f -> {
+                                if (f.isSuccess()) {
+                                    Channel channel = f.channel();
+                                    Connection connection = new DefaultConnection(bootstrap, channel, key);
+                                    // 添加 HTTP 协议转换处理器
+                                    channel.pipeline().addLast(new HttpConnectionHandler(connection));
+                                    connections.put(key, connection);
+                                    future.complete(connection);
+                                } else {
+                                    future.completeExceptionally(f.cause());
+                                }
 
-                    if (f.isSuccess()) {
-                        Channel channel = f.channel();
-                        Connection connection = new DefaultConnection(bootstrap, channel, instance);
-                        // 添加 HTTP 协议转换处理器
-                        channel.pipeline().addLast(new HttpConnectionHandler(connection));
-                        connections.put(instance, connection);
-                        future.complete(connection);
-                    } else {
-                        future.completeExceptionally(f.cause());
-                    }
+                                // 无论成功还是失败，都要从 map 中移除。 这样，下一次调用 createConnection 时就可以发起新的连接尝试。
+                                pendingConnections.remove(key, future);
+                            });
                 });
+            } catch (RejectedExecutionException e) {
+                // 处理线程池拒绝任务的极端情况(线程池已关闭)
+                logger.warn("Create connection task for {} was rejected by the executor.", key, e);
+                pendingConnections.remove(key, future); // 从 map 中移除，以便可以重试
+                future.completeExceptionally(e);
+            }
 
-        return future;
+            return future;
+        });
     }
 
     @Override
@@ -122,10 +152,12 @@ public class DefaultConnectionManager implements ConnectionManager {
     @Override
     public void close() {
         if (!closed) {
+            createConnectionExecutor.shutdown();
             closed = true;
             connections.values().forEach(Connection::close);
             connections.clear();
             workerGroup.shutdownGracefully();
+            createConnectionExecutor.shutdown();
         }
     }
 }

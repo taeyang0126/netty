@@ -1,11 +1,12 @@
 package io.netty.gateway.route.connection;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.gateway.protocol.GatewayMessage;
 import io.netty.gateway.route.ServiceInstance;
-import io.netty.util.internal.logging.InternalLogger;
-import io.netty.util.internal.logging.InternalLoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -22,17 +23,25 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author 伍磊
  */
 public class DefaultConnection implements Connection {
-    private static final InternalLogger logger = InternalLoggerFactory.getInstance(DefaultConnection.class);
+    private static final Logger logger = LoggerFactory.getLogger(DefaultConnection.class);
+
     private static final int MAX_RETRY_TIMES = 3;
+    private static final int MAX_TOTAL_RETRY_TIMES = 5;
     private static final long RETRY_INTERVAL_SECONDS = 1;
 
     private final ServiceInstance serviceInstance;
     private volatile Channel channel;
     private final Map<Long, CompletableFuture<GatewayMessage>> pendingMessages;
+    // 针对一个连接的重试次数
     private final AtomicInteger retryCount;
+    // 针对这个 Connection 的整体的重试次数
+    private final AtomicInteger totalRetryCount;
     private final Bootstrap bootstrap;
+
     // 关键：用于区分是主动关闭还是被动断开的标志位
     private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
+    // 这个标志位用于确保任何时候只有一个重连流程正在进行。
+    private final AtomicBoolean isReconnecting = new AtomicBoolean(false);
 
     public DefaultConnection(Bootstrap bootstrap, Channel channel, ServiceInstance serviceInstance) {
         this.bootstrap = bootstrap;
@@ -40,6 +49,7 @@ public class DefaultConnection implements Connection {
         this.serviceInstance = serviceInstance;
         this.pendingMessages = new ConcurrentHashMap<>();
         this.retryCount = new AtomicInteger(0);
+        this.totalRetryCount = new AtomicInteger(0);
 
         setupChannel();
     }
@@ -49,15 +59,15 @@ public class DefaultConnection implements Connection {
         CompletableFuture<GatewayMessage> completableFuture = new CompletableFuture<>();
         if (!isActive()) {
             completableFuture.completeExceptionally(
-                new IllegalStateException("Connection is not active"));
+                    new IllegalStateException("Connection is not active"));
             return completableFuture;
         }
 
         pendingMessages.put(message.getRequestId(), completableFuture);
         channel.writeAndFlush(message).addListener(future -> {
             if (!future.isSuccess()) {
-                CompletableFuture<GatewayMessage> pending = 
-                    pendingMessages.remove(message.getRequestId());
+                CompletableFuture<GatewayMessage> pending =
+                        pendingMessages.remove(message.getRequestId());
                 if (pending != null) {
                     pending.completeExceptionally(future.cause());
                 }
@@ -103,35 +113,42 @@ public class DefaultConnection implements Connection {
         channel.closeFuture().addListener(future -> {
             // 非手动关闭再重连
             if (!isShuttingDown.get()) {
-                scheduleReconnect();
+                // 只有当 isReconnecting 标志位从 false 成功变为 true 时，才执行重连。
+                // 这确保了只有一个线程能够启动重连流程。
+                if (isReconnecting.compareAndSet(false, true)) {
+                    logger.info("[{}]Connection lost. Acquiring reconnect lock and starting reconnection process for {}", this.hashCode(), serviceInstance);
+                    scheduleReconnect();
+                } else {
+                    logger.info("Connection lost, but another reconnection process is already running for {}", serviceInstance);
+                }
             }
         });
     }
 
     private void scheduleReconnect() {
         int currentRetry = retryCount.incrementAndGet();
-        if (currentRetry > MAX_RETRY_TIMES) {
+        int totalRetry = totalRetryCount.incrementAndGet();
+        if (currentRetry > MAX_RETRY_TIMES || totalRetry > MAX_TOTAL_RETRY_TIMES) {
             // 重连失败，清理资源
-            logger.warn("Max retry times ({}) reached for {}", MAX_RETRY_TIMES, serviceInstance);
+            logger.warn("Max retry times (currentRetry={}, totalRetry={}) reached for {}", currentRetry, totalRetry, serviceInstance);
             clearResource();
+            // 放弃重连时，释放锁
+            isReconnecting.set(false);
             return;
         }
 
-        logger.info("Scheduling reconnection for {}, attempt {}/{}",
-                serviceInstance, currentRetry, MAX_RETRY_TIMES);
+        logger.info("Scheduling reconnection for {}, attempt {}/{}, totalAttempt {}/{}",
+                serviceInstance, currentRetry, MAX_RETRY_TIMES, totalRetry, MAX_TOTAL_RETRY_TIMES);
 
         channel.eventLoop().schedule(() -> {
-            if (isActive()) {
-                return;
-            }
-
             bootstrap.connect(serviceInstance.getHost(), serviceInstance.getPort())
                     .addListener((ChannelFutureListener) future -> {
                         if (future.isSuccess()) {
+                            logger.info("Successfully reconnected to {}", serviceInstance);
                             channel = future.channel();
                             setupChannel();
                             retryCount.set(0);
-                            logger.info("Successfully reconnected to {}", serviceInstance);
+                            isReconnecting.set(false);
                         } else {
                             logger.warn("Failed to reconnect to {}: {}",
                                     serviceInstance, future.cause().getMessage());

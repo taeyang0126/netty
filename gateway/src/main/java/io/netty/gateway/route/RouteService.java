@@ -1,6 +1,7 @@
 package io.netty.gateway.route;
 
 import io.netty.gateway.protocol.GatewayMessage;
+import io.netty.gateway.route.connection.ConnectionManager;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -21,4 +22,17 @@ public interface RouteService {
      */
     CompletableFuture<GatewayMessage> route(GatewayMessage message);
 
+    /**
+     * 获取服务注册中心
+     *
+     * @return 服务注册中心
+     */
+    ServiceRegistry getServiceRegistry();
+
+    /**
+     * 获取连接管理器
+     *
+     * @return 连接管理器
+     */
+    ConnectionManager getConnectionManager();
 }

@@ -12,6 +12,7 @@
 
         <RollingFile name="FileAppender" fileName="${LOG_FILE_PATH}/gateway.log"
                      filePattern="${LOG_FILE_PATH}/gateway-%d{yyyy-MM-dd}-%i.log">
+            <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
             <PatternLayout pattern="${LOG_PATTERN}"/>
             <Policies>
                 <TimeBasedTriggeringPolicy interval="1"/>

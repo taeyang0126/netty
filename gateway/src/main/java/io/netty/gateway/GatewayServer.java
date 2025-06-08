@@ -17,6 +17,7 @@ import io.netty.gateway.handler.GatewayServerHandler;
 import io.netty.gateway.route.DefaultRouteService;
 import io.netty.gateway.route.DefaultServiceRegistry;
 import io.netty.gateway.route.RouteService;
+import io.netty.gateway.route.ServiceInstance;
 import io.netty.gateway.route.ServiceRegistry;
 import io.netty.gateway.route.connection.ConnectionManager;
 import io.netty.gateway.route.connection.DefaultConnectionManager;
@@ -77,7 +78,6 @@ public class GatewayServer {
                     .option(ChannelOption.SO_REUSEADDR, true)
                     .childOption(ChannelOption.SO_KEEPALIVE, true)
                     .childOption(ChannelOption.TCP_NODELAY, true)
-                    //.handler(new LoggingHandler(LogLevel.INFO))
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
@@ -87,8 +87,6 @@ public class GatewayServer {
                             p.addLast(new IdleStateHandler(60, 0, 0, TimeUnit.SECONDS));
                             // 添加消息编解码器
                             p.addLast(new GatewayMessageCodec());
-                            // 添加日志处理器
-                            //p.addLast(new LoggingHandler(LogLevel.INFO));
                             // auth handler
                             p.addLast(authHandler);
                             // 添加网关处理器
@@ -123,6 +121,11 @@ public class GatewayServer {
         bossGroup.shutdownGracefully();
         workerGroup.shutdownGracefully();
         logger.info("Gateway Server shutdown completed");
+    }
+
+    public void registerService(String bizType, String host, int port) {
+        ServiceRegistry serviceRegistry = this.routeService.getServiceRegistry();
+        serviceRegistry.registerService(bizType, new ServiceInstance(host, port));
     }
 
     public static void main(String[] args) throws Exception {

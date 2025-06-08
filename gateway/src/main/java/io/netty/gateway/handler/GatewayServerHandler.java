@@ -10,10 +10,15 @@ import io.netty.gateway.session.SessionManager;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 网关服务器消息处理器
@@ -23,15 +28,26 @@ public class GatewayServerHandler extends ChannelInboundHandlerAdapter {
 
     private final SessionManager sessionManager;
     private final RouteService routeService;
+    private final ExecutorService businessExecutor;
 
     public GatewayServerHandler(SessionManager sessionManager, RouteService routeService) {
         this.sessionManager = sessionManager;
         this.routeService = routeService;
+        // 创建业务线程池，线程数可配置
+        this.businessExecutor = new ThreadPoolExecutor(
+                Runtime.getRuntime().availableProcessors() * 2,
+                Runtime.getRuntime().availableProcessors() * 4,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(10000),
+                new DefaultThreadFactory("gateway-business"),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
     }
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         if (!(msg instanceof GatewayMessage)) {
+            ReferenceCountUtil.release(msg);
             logger.error("Received message is not GatewayMessage: {}", msg);
             return;
         }
@@ -43,10 +59,21 @@ public class GatewayServerHandler extends ChannelInboundHandlerAdapter {
             // 处理不同类型的消息
             switch (message.getMsgType()) {
                 case GatewayMessage.MESSAGE_TYPE_HEARTBEAT:
+                    // 心跳消息直接在 EventLoop 中处理，因为处理逻辑简单
                     handleHeartbeat(ctx, message, session);
                     break;
                 case GatewayMessage.MESSAGE_TYPE_BIZ:
-                    handleBizMessage(ctx, message, session);
+                    // 业务消息提交到业务线程池处理
+                    final GatewayMessage requestMessage = message;
+                    final Session currentSession = session;
+                    businessExecutor.execute(() -> {
+                        try {
+                            handleBizMessage(ctx, requestMessage, currentSession);
+                        } catch (Exception e) {
+                            logger.error("Handle business message error", e);
+                            handleError(ctx, requestMessage, e);
+                        }
+                    });
                     break;
                 default:
                     logger.warn("Unknown message type: {}", message.getMsgType());
@@ -55,7 +82,6 @@ public class GatewayServerHandler extends ChannelInboundHandlerAdapter {
         } catch (Exception e) {
             logger.error("Handle message error", e);
             handleError(ctx, message, e);
-        } finally {
             ReferenceCountUtil.release(msg);
         }
     }
@@ -96,6 +122,20 @@ public class GatewayServerHandler extends ChannelInboundHandlerAdapter {
             sessionManager.removeSession(session.getId());
         }
         ctx.close();
+    }
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) {
+        // 优雅关闭线程池
+        businessExecutor.shutdown();
+        try {
+            if (!businessExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                businessExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            businessExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private Session getSession(ChannelHandlerContext ctx, GatewayMessage message) {
