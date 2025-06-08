@@ -10,7 +10,9 @@ import io.netty.channel.MultiThreadIoEventLoopGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.gateway.auth.DefaultAuthService;
 import io.netty.gateway.codec.GatewayMessageCodec;
+import io.netty.gateway.handler.AuthHandler;
 import io.netty.gateway.handler.GatewayServerHandler;
 import io.netty.gateway.route.DefaultRouteService;
 import io.netty.gateway.route.DefaultServiceRegistry;
@@ -37,6 +39,7 @@ public class GatewayServer {
     private final ServiceRegistry registry;
     private final LoadBalancer loadBalancer;
     private final ConnectionManager connectionManager;
+    private final AuthHandler authHandler;
     
     public GatewayServer(int port) {
         this.port = port;
@@ -47,6 +50,7 @@ public class GatewayServer {
         this.loadBalancer = new RoundRobinLoadBalancer();
         this.connectionManager = new DefaultConnectionManager();
         this.routeService = new DefaultRouteService(registry, loadBalancer, connectionManager);
+        this.authHandler = new AuthHandler(new DefaultAuthService(), sessionManager);
     }
     
     public void start() throws Exception {
@@ -68,6 +72,8 @@ public class GatewayServer {
                      p.addLast(new GatewayMessageCodec());
                      // 添加日志处理器
                      p.addLast(new LoggingHandler(LogLevel.INFO));
+                     // auth handler
+                     p.addLast(authHandler);
                      // 添加网关处理器
                      p.addLast(new GatewayServerHandler(sessionManager, routeService));
                  }

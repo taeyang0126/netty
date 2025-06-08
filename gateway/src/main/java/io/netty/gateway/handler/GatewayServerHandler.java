@@ -42,9 +42,6 @@ public class GatewayServerHandler extends ChannelInboundHandlerAdapter {
         try {
             // 处理不同类型的消息
             switch (message.getMsgType()) {
-                case GatewayMessage.MESSAGE_TYPE_AUTH:
-                    handleAuth(ctx, message, session);
-                    break;
                 case GatewayMessage.MESSAGE_TYPE_HEARTBEAT:
                     handleHeartbeat(ctx, message, session);
                     break;
@@ -102,34 +99,10 @@ public class GatewayServerHandler extends ChannelInboundHandlerAdapter {
 
     private Session getSession(ChannelHandlerContext ctx, GatewayMessage message) {
         Session session = DefaultSession.getSession(ctx.channel());
-
-        // 如果是认证消息且没有会话，创建新会话
-        if (message.getMsgType() == GatewayMessage.MESSAGE_TYPE_AUTH && session == null) {
-            session = sessionManager.createSession(message.getClientId(), ctx.channel());
-            logger.info("New session created: {}", session.getId());
-        }
-
-        return session;
-    }
-
-    private void handleAuth(ChannelHandlerContext ctx, GatewayMessage message, Session session) {
         if (session == null) {
-            logger.error("No session found for auth message");
             ctx.close();
-            return;
         }
-
-        // TODO: 实现具体的认证逻辑
-        session.setAuthenticated(true);
-
-        // 发送认证响应
-        GatewayMessage response = new GatewayMessage();
-        response.setMsgType(GatewayMessage.MESSAGE_TYPE_AUTH_RESP);
-        response.setRequestId(message.getRequestId());
-        response.setClientId(message.getClientId());
-        ctx.writeAndFlush(response);
-
-        logger.info("Client authenticated: clientId={}, sessionId={}", session.getClientId(), session.getId());
+        return session;
     }
 
     private void handleHeartbeat(ChannelHandlerContext ctx, GatewayMessage message, Session session) {

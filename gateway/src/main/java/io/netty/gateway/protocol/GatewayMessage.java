@@ -40,9 +40,10 @@ public class GatewayMessage {
 
     // 消息类型定义
     public static final byte MESSAGE_TYPE_AUTH = (byte) 0x01;      // 认证消息
-    public static final byte MESSAGE_TYPE_AUTH_RESP = (byte) 0x02; // 认证响应
-    public static final byte MESSAGE_TYPE_HEARTBEAT = (byte) 0x03; // 心跳消息
-    public static final byte MESSAGE_TYPE_BIZ = (byte) 0x04;       // 业务消息
+    public static final byte MESSAGE_TYPE_AUTH_SUCCESS_RESP = (byte) 0x02; // 认证成功
+    public static final byte MESSAGE_TYPE_AUTH_FAIL_RESP = (byte) 0x03; // 认证失败
+    public static final byte MESSAGE_TYPE_HEARTBEAT = (byte) 0x04; // 心跳消息
+    public static final byte MESSAGE_TYPE_BIZ = (byte) 0x05;       // 业务消息
     public static final byte MESSAGE_TYPE_ERROR = (byte) 0xFF;     // 错误消息
 
     // 消息头
