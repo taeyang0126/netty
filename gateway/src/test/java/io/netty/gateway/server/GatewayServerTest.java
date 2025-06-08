@@ -36,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,6 +63,7 @@ public class GatewayServerTest {
     private GatewayServer gatewayServer;
     private Map<Long, CompletableFuture<GatewayMessage>> pendingRequests;
     private Channel clientChannel;
+    private final AtomicInteger counter = new AtomicInteger();
 
     @BeforeEach
     public void setup() throws Exception {
@@ -73,7 +75,7 @@ public class GatewayServerTest {
         gatewayServer = new GatewayServer(SERVER_PORT, routeService);
         Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r);
-            thread.setName("gateway-server-" + UUID.randomUUID());
+            thread.setName("gateway-server-" + counter.incrementAndGet());
             thread.setDaemon(true);
             return thread;
         }).execute(() -> {

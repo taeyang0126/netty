@@ -24,14 +24,16 @@ import io.netty.gateway.route.loadbalancer.LoadBalancer;
 import io.netty.gateway.route.loadbalancer.RoundRobinLoadBalancer;
 import io.netty.gateway.session.DefaultSessionManager;
 import io.netty.gateway.session.SessionManager;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.timeout.IdleStateHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class GatewayServer {
+    private static final Logger logger = LoggerFactory.getLogger(GatewayServer.class);
+
     private final int port;
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
@@ -65,6 +67,8 @@ public class GatewayServer {
     }
 
     public void start(CompletableFuture<Void> completableFuture) throws Exception {
+        logger.info("Starting Gateway Server on port: {}", port);
+        
         try {
             ServerBootstrap b = new ServerBootstrap();
             b.group(bossGroup, workerGroup)
@@ -77,6 +81,7 @@ public class GatewayServer {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) throws Exception {
+                            logger.debug("New connection from: {}", ch.remoteAddress());
                             ChannelPipeline p = ch.pipeline();
                             // 添加空闲检测，60秒没有读取到数据则判定为空闲
                             p.addLast(new IdleStateHandler(60, 0, 0, TimeUnit.SECONDS));
@@ -93,11 +98,15 @@ public class GatewayServer {
 
             // 绑定端口并启动服务器
             ChannelFuture f = b.bind(port).sync();
-            System.out.println("Gateway server started on port " + port);
+            logger.info("Gateway Server started successfully on port: {}", port);
             completableFuture.complete(null);
 
             // 等待服务器关闭
             f.channel().closeFuture().sync();
+        } catch (Exception e) {
+            logger.error("Failed to start Gateway Server", e);
+            completableFuture.completeExceptionally(e);
+            throw e;
         } finally {
             // 优雅关闭
             shutdown();
@@ -105,6 +114,7 @@ public class GatewayServer {
     }
 
     public void shutdown() {
+        logger.info("Shutting down Gateway Server...");
         // 关闭会话管理器
         if (sessionManager instanceof DefaultSessionManager) {
             ((DefaultSessionManager) sessionManager).shutdown();
@@ -112,6 +122,7 @@ public class GatewayServer {
         // 关闭线程组
         bossGroup.shutdownGracefully();
         workerGroup.shutdownGracefully();
+        logger.info("Gateway Server shutdown completed");
     }
 
     public static void main(String[] args) throws Exception {
