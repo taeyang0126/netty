@@ -810,6 +810,7 @@
     <module>transport-blockhound-tests</module>
     <module>microbench</module>
     <module>bom</module>
+    <module>gateway</module>
   </modules>
 
   <dependencyManagement>
