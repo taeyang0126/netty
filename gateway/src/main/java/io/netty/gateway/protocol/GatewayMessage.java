@@ -3,6 +3,7 @@ package io.netty.gateway.protocol;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.CharsetUtil;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.zip.CRC32;
@@ -264,5 +265,19 @@ public class GatewayMessage {
 
     public void setBody(byte[] body) {
         this.body = body;
+    }
+
+    @Override
+    public String toString() {
+        return "GatewayMessage{" +
+                "magic=" + magic +
+                ", version=" + version +
+                ", msgType=" + msgType +
+                ", requestId=" + requestId +
+                ", clientId='" + clientId + '\'' +
+                ", bizType='" + bizType + '\'' +
+                ", extensions=" + extensions +
+                ", body=" + (body == null ? "" : new String(body)) +
+                '}';
     }
 }

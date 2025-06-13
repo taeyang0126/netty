@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class DefaultConnection implements Connection {
     private static final Logger logger = LoggerFactory.getLogger(DefaultConnection.class);
 
-    private static final int MAX_RETRY_TIMES = 3;
-    private static final int MAX_TOTAL_RETRY_TIMES = 5;
+    public static final int MAX_RETRY_TIMES = 3;
+    public static final int MAX_TOTAL_RETRY_TIMES = 5;
     private static final long RETRY_INTERVAL_SECONDS = 1;
 
     private final ServiceInstance serviceInstance;
@@ -63,14 +63,11 @@ public class DefaultConnection implements Connection {
             return completableFuture;
         }
 
-        pendingMessages.put(message.getRequestId(), completableFuture);
         channel.writeAndFlush(message).addListener(future -> {
-            if (!future.isSuccess()) {
-                CompletableFuture<GatewayMessage> pending =
-                        pendingMessages.remove(message.getRequestId());
-                if (pending != null) {
-                    pending.completeExceptionally(future.cause());
-                }
+            if (future.isSuccess()) {
+                pendingMessages.put(message.getRequestId(), completableFuture);
+            } else {
+                completableFuture.completeExceptionally(future.cause());
             }
         });
 
@@ -126,9 +123,9 @@ public class DefaultConnection implements Connection {
     }
 
     private void scheduleReconnect() {
-        int currentRetry = retryCount.incrementAndGet();
-        int totalRetry = totalRetryCount.incrementAndGet();
-        if (currentRetry > MAX_RETRY_TIMES || totalRetry > MAX_TOTAL_RETRY_TIMES) {
+        int currentRetry = retryCount.get();
+        int totalRetry = totalRetryCount.get();
+        if (currentRetry >= MAX_RETRY_TIMES || totalRetry >= MAX_TOTAL_RETRY_TIMES) {
             // 重连失败，清理资源
             logger.warn("Max retry times (currentRetry={}, totalRetry={}) reached for {}", currentRetry, totalRetry, serviceInstance);
             clearResource();
@@ -136,6 +133,9 @@ public class DefaultConnection implements Connection {
             isReconnecting.set(false);
             return;
         }
+
+        currentRetry = retryCount.incrementAndGet();
+        totalRetry = totalRetryCount.incrementAndGet();
 
         logger.info("Scheduling reconnection for {}, attempt {}/{}, totalAttempt {}/{}",
                 serviceInstance, currentRetry, MAX_RETRY_TIMES, totalRetry, MAX_TOTAL_RETRY_TIMES);
@@ -163,5 +163,13 @@ public class DefaultConnection implements Connection {
         pendingMessages.forEach((reqId, completeFuture) ->
                 completeFuture.completeExceptionally(new RuntimeException("Connection closed")));
         pendingMessages.clear();
+    }
+
+    public AtomicInteger getRetryCount() {
+        return retryCount;
+    }
+
+    public AtomicInteger getTotalRetryCount() {
+        return totalRetryCount;
     }
 }

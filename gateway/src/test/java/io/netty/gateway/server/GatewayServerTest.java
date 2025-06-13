@@ -23,6 +23,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.stubbing.Answer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +36,7 @@ import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -53,6 +57,8 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 public class GatewayServerTest {
+
+    private static final Logger logger = LoggerFactory.getLogger(HttpBinProxyTest.class);
 
     @Mock
     private RouteService routeService;
@@ -234,6 +240,49 @@ public class GatewayServerTest {
             GatewayMessage response = futures.get(i).get(5, TimeUnit.SECONDS);
             assertEquals(messages.get(i).getRequestId(), response.getRequestId());
         }
+    }
+
+    @Test
+    public void testConcurrencyMessage() throws Exception {
+        when(routeService.route(any(GatewayMessage.class))).thenAnswer((Answer<CompletableFuture<GatewayMessage>>) invocation -> {
+            GatewayMessage request = invocation.getArgument(0);
+
+            GatewayMessage mockResponseMsg = new GatewayMessage();
+            mockResponseMsg.setMsgType(GatewayMessage.MESSAGE_TYPE_BIZ);
+            mockResponseMsg.setRequestId(request.getRequestId());
+            mockResponseMsg.setClientId(request.getClientId());
+            mockResponseMsg.setBody(request.getBody());
+
+            // c. 返回修改后的对象
+            CompletableFuture<GatewayMessage> concurrentFuture = new CompletableFuture<>();
+            concurrentFuture.complete(mockResponseMsg);
+            return concurrentFuture;
+        });
+
+        doAuth();  // 先认证
+
+        // 发送多条顺序消息
+        int messageCount = 1000;
+        CountDownLatch latch = new CountDownLatch(messageCount);
+        List<CompletableFuture<GatewayMessage>> futures = new ArrayList<>();
+
+        for (int i = 0; i < messageCount; i++) {
+            GatewayMessage msg = new GatewayMessage();
+            msg.setMsgType(GatewayMessage.MESSAGE_TYPE_BIZ);
+            msg.setRequestId(System.currentTimeMillis() + i);  // 确保唯一
+            msg.setClientId(UUID.randomUUID().toString());
+            msg.setBody(String.valueOf(i).getBytes(StandardCharsets.UTF_8));
+
+            futures.add(writeMsg(msg));
+            latch.countDown();
+        }
+
+        latch.await();
+        logger.info("send finished");
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()])).join();
+        logger.info("finished");
+
     }
 
     @Test

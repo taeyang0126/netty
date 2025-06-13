@@ -51,7 +51,7 @@ public class DefaultConnectionManager implements ConnectionManager {
                 NioIoHandler.newFactory());
         this.bootstrap = new Bootstrap();
         this.closed = false;
-        // 创建业务线程池，线程数可配置
+        // 创建连接线程池
         this.createConnectionExecutor = new ThreadPoolExecutor(
                 1,
                 2,

@@ -19,7 +19,7 @@ import java.util.Map;
  */
 public class HttpProtocolConverter {
 
-    private static final String HEADER_REQUEST_ID = "X-Request-Id";
+    private static final String HEADER_REQUEST_ID = "Request-Id";
     private static final String HEADER_CLIENT_ID = "X-Client-Id";
 
     /**
