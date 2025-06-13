@@ -43,6 +43,7 @@ public class DefaultConnectionManager implements ConnectionManager {
     private final Bootstrap bootstrap;
     private volatile boolean closed;
     private final ExecutorService createConnectionExecutor;
+    private final ExecutorService bizExecutor;
 
     public DefaultConnectionManager() {
         this.connections = new ConcurrentHashMap<>();
@@ -58,6 +59,15 @@ public class DefaultConnectionManager implements ConnectionManager {
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(10),
                 new DefaultThreadFactory("upstream-connection-create"),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+
+        this.bizExecutor = new ThreadPoolExecutor(
+                4,
+                4,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(100),
+                new DefaultThreadFactory("upstream-biz-handler"),
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
 
@@ -112,7 +122,7 @@ public class DefaultConnectionManager implements ConnectionManager {
                                     Channel channel = f.channel();
                                     Connection connection = new DefaultConnection(bootstrap, channel, key);
                                     // 添加 HTTP 协议转换处理器
-                                    channel.pipeline().addLast(new HttpConnectionHandler(connection));
+                                    channel.pipeline().addLast(new HttpConnectionHandler(connection, bizExecutor));
                                     connections.put(key, connection);
                                     future.complete(connection);
                                 } else {
