@@ -54,6 +54,10 @@ public class GatewayServer {
         this.authHandler = new AuthHandler(new DefaultAuthService(), sessionManager);
     }
 
+    public GatewayServer(int port, ServiceRegistry registry, ConnectionManager connectionManager) {
+        this(port, new DefaultRouteService(registry, new RoundRobinLoadBalancer(), connectionManager));
+    }
+
     public GatewayServer(int port, RouteService routeService) {
         this.port = port;
         this.bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
@@ -69,7 +73,7 @@ public class GatewayServer {
 
     public void start(CompletableFuture<Void> completableFuture) throws Exception {
         logger.info("Starting Gateway Server on port: {}", port);
-        
+
         try {
             ServerBootstrap b = new ServerBootstrap();
             b.group(bossGroup, workerGroup)

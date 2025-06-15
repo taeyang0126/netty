@@ -20,7 +20,7 @@ public class ServiceInstance {
     private final boolean enabled;
 
     public ServiceInstance(String host, int port) {
-        this(host, port, 100);
+        this(host, port, 1);
     }
 
     public ServiceInstance(String host, int port, int weight) {
@@ -28,7 +28,7 @@ public class ServiceInstance {
     }
 
     public ServiceInstance(String host, int port, Map<String, String> metadata) {
-        this(host, port, 100, metadata, true, true);
+        this(host, port, 1, metadata, true, true);
     }
 
     public ServiceInstance(String host, int port, double weight, Map<String, String> metadata, boolean healthy, boolean enabled) {
@@ -91,6 +91,7 @@ public class ServiceInstance {
                 ", port=" + port +
                 ", weight=" + weight +
                 ", healthy=" + healthy +
+                ", enable=" + enabled +
                 ", metadata=" + metadata +
                 '}';
     }
