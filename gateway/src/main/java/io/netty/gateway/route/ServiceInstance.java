@@ -1,7 +1,8 @@
 package io.netty.gateway.route;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 服务实例
@@ -10,20 +11,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ServiceInstance {
     private final String host;
     private final int port;
-    private final int weight;
-    private final AtomicInteger active;
+    private final double weight;
     private volatile boolean healthy;
+    private final Map<String, String> metadata;
+    /**
+     * If instance is enabled to accept request.
+     */
+    private final boolean enabled;
 
     public ServiceInstance(String host, int port) {
         this(host, port, 100);
     }
 
     public ServiceInstance(String host, int port, int weight) {
+        this(host, port, weight, new HashMap<>(), true, true);
+    }
+
+    public ServiceInstance(String host, int port, Map<String, String> metadata) {
+        this(host, port, 100, metadata, true, true);
+    }
+
+    public ServiceInstance(String host, int port, double weight, Map<String, String> metadata, boolean healthy, boolean enabled) {
         this.host = host;
         this.port = port;
         this.weight = weight;
-        this.active = new AtomicInteger(0);
-        this.healthy = true;
+        this.metadata = new HashMap<>(metadata);
+        this.healthy = healthy;
+        this.enabled = enabled;
     }
 
     public String getHost() {
@@ -34,7 +48,7 @@ public class ServiceInstance {
         return port;
     }
 
-    public int getWeight() {
+    public double getWeight() {
         return weight;
     }
 
@@ -46,16 +60,13 @@ public class ServiceInstance {
         this.healthy = healthy;
     }
 
-    public int incrementAndGetActive() {
-        return active.incrementAndGet();
+
+    public Map<String, String> getMetadata() {
+        return new HashMap<>(metadata);
     }
 
-    public int decrementAndGetActive() {
-        return active.decrementAndGet();
-    }
-
-    public int getActive() {
-        return active.get();
+    public boolean isEnabled() {
+        return enabled;
     }
 
     @Override
@@ -63,17 +74,24 @@ public class ServiceInstance {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ServiceInstance that = (ServiceInstance) o;
-        return port == that.port && Objects.equals(host, that.host);
+        return port == that.port &&
+                Objects.equals(host, that.host) &&
+                Objects.equals(metadata, that.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(host, port);
+        return Objects.hash(host, port, metadata);
     }
 
     @Override
     public String toString() {
-        return String.format("%s:%d(weight=%d,active=%d,healthy=%s)", 
-            host, port, weight, active.get(), healthy);
+        return "ServiceInstance{" +
+                "host='" + host + '\'' +
+                ", port=" + port +
+                ", weight=" + weight +
+                ", healthy=" + healthy +
+                ", metadata=" + metadata +
+                '}';
     }
 } 

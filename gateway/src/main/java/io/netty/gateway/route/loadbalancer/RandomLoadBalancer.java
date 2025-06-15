@@ -4,7 +4,6 @@ import io.netty.gateway.route.ServiceInstance;
 
 import java.util.List;
 import java.util.Random;
-import java.util.stream.Collectors;
 
 /**
  * 随机负载均衡器实现
@@ -21,7 +20,8 @@ public class RandomLoadBalancer implements LoadBalancer {
         // 过滤出健康的实例
         List<ServiceInstance> healthyInstances = instances.stream()
                 .filter(ServiceInstance::isHealthy)
-                .collect(Collectors.toList());
+                .filter(ServiceInstance::isEnabled)
+                .toList();
 
         if (healthyInstances.isEmpty()) {
             return null;

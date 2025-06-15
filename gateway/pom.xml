@@ -17,6 +17,10 @@
         <mockito.version>5.12.0</mockito.version>
         <testcontainers.version>1.19.3</testcontainers.version>
         <toxiproxy.version>1.18.3</toxiproxy.version>
+        <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
+        <java.version>21</java.version>
+        <nacos.version>2.5.1</nacos.version>
+        <jackson.version>2.13.5</jackson.version>
     </properties>
 
     <dependencies>
@@ -152,28 +156,50 @@
             <artifactId>junit-jupiter</artifactId>
             <version>${testcontainers.version}</version>
         </dependency>
+        <!-- Nacos Client -->
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-client</artifactId>
+            <version>${nacos.version}</version>
+        </dependency>
+
+        <!--
+          明确指定 Jackson 的核心三件套，并统一版本，
+          以解决 ClassNotFoundException 和版本冲突问题。
+        -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
 
     </dependencies>
 
-<!--    <build>
+    <build>
         <plugins>
-            &lt;!&ndash; run-example.sh invokes this plugin to launch an example. &ndash;&gt;
+            <!--编译配置，指定开启 enable-preview -->
             <plugin>
-                <groupId>kr.motd.maven</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
                 <configuration>
-                    <executable>${java.home}/bin/java</executable>
-                    <commandlineArgs>
-                        ${argLine.common}
-                        -classpath %classpath
-                        ${argLine.leak}
-                        ${argLine.coverage}
-                        ${argLine.example}
-                        ${exampleClass}
-                    </commandlineArgs>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <meminitial>100m</meminitial>
+                    <maxmem>200m</maxmem>
                 </configuration>
             </plugin>
         </plugins>
-    </build>-->
+    </build>
 
 </project>

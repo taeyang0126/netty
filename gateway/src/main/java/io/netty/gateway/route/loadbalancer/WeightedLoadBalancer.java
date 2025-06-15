@@ -4,7 +4,6 @@ import io.netty.gateway.route.ServiceInstance;
 
 import java.util.List;
 import java.util.Random;
-import java.util.stream.Collectors;
 
 /**
  * 加权负载均衡器实现
@@ -21,22 +20,23 @@ public class WeightedLoadBalancer implements LoadBalancer {
         // 过滤出健康的实例
         List<ServiceInstance> healthyInstances = instances.stream()
                 .filter(ServiceInstance::isHealthy)
-                .collect(Collectors.toList());
+                .filter(ServiceInstance::isEnabled)
+                .toList();
 
         if (healthyInstances.isEmpty()) {
             return null;
         }
 
         // 计算总权重
-        int totalWeight = healthyInstances.stream()
-                .mapToInt(ServiceInstance::getWeight)
+        double totalWeight = healthyInstances.stream()
+                .mapToDouble(ServiceInstance::getWeight)
                 .sum();
 
         // 在0到总权重之间随机选择一个值
-        int randomWeight = random.nextInt(totalWeight);
-        
+        double randomWeight = random.nextDouble(totalWeight);
+
         // 根据权重选择实例
-        int currentWeight = 0;
+        double currentWeight = 0d;
         for (ServiceInstance instance : healthyInstances) {
             currentWeight += instance.getWeight();
             if (randomWeight < currentWeight) {
