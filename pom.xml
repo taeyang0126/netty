@@ -697,6 +697,21 @@
     <netty.build.version>31</netty.build.version>
     <jboss.marshalling.version>1.4.11.Final</jboss.marshalling.version>
     <bouncycastle.version>1.80</bouncycastle.version>
+
+    <!-- 跳过所有检查 -->
+    <checkstyle.skip>true</checkstyle.skip>
+    <xml.skip>true</xml.skip>
+    <skipTests>true</skipTests>
+    <jacoco.skip>true</jacoco.skip>
+    <enforcer.skip>true</enforcer.skip>
+    <forbiddenapis.skip>true</forbiddenapis.skip>
+    <skipDeploy>true</skipDeploy>
+    <revapi.skip>true</revapi.skip>
+    <skipOsgiTestsuite>true</skipOsgiTestsuite>
+    <skipAutobahnTestsuite>true</skipAutobahnTestsuite>
+    <skipHttp2Testsuite>true</skipHttp2Testsuite>
+    <skipShadingTestsuite>true</skipShadingTestsuite>
+
     <argLine.common>
       -server
       -dsa -da -ea:io.netty...

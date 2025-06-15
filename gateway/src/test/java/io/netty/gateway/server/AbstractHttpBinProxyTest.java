@@ -31,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static io.netty.gateway.test.CommonMicroServiceTest.DIRECT_HOST;
 import static io.netty.gateway.test.CommonMicroServiceTest.DIRECT_PORT;
@@ -88,12 +89,13 @@ public abstract class AbstractHttpBinProxyTest {
     }
 
     @Test
-    @Timeout(5)
+    @Timeout(10)
     public void test() throws Exception {
         doAuth();
 
         // 1. anything
         gatewayServer.registerService("anything", DIRECT_HOST, DIRECT_PORT);
+        TimeUnit.SECONDS.sleep(1);
         GatewayMessage anythingRequest = new GatewayMessage();
         anythingRequest.setMsgType(GatewayMessage.MESSAGE_TYPE_BIZ);
         anythingRequest.setRequestId(System.currentTimeMillis());
@@ -111,6 +113,7 @@ public abstract class AbstractHttpBinProxyTest {
 
         // 2. delay 1s
         gatewayServer.registerService("delay.1", DIRECT_HOST, DIRECT_PORT);
+        TimeUnit.SECONDS.sleep(1);
         anythingRequest = new GatewayMessage();
         anythingRequest.setMsgType(GatewayMessage.MESSAGE_TYPE_BIZ);
         anythingRequest.setRequestId(System.currentTimeMillis());

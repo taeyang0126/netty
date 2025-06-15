@@ -22,7 +22,7 @@ public class RoundRobinLoadBalancer implements LoadBalancer {
         List<ServiceInstance> healthyInstances = instances.stream()
                 .filter(ServiceInstance::isHealthy)
                 .filter(ServiceInstance::isEnabled)
-                .toList();
+                .collect(Collectors.toList());
 
         if (healthyInstances.isEmpty()) {
             return null;
