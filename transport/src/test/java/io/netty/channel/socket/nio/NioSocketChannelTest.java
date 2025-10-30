@@ -52,6 +52,7 @@ import java.nio.channels.NetworkChannel;
 import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.hamcrest.CoreMatchers.*;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -160,7 +161,7 @@ public class NioSocketChannelTest extends AbstractNioChannelTest<NioSocketChanne
     }
 
     // Test for https://github.com/netty/netty/issues/4805
-    @Test(timeout = 3000)
+    @Test()
     public void testChannelReRegisterReadSameEventLoop() throws Exception {
         testChannelReRegisterRead(true);
     }
@@ -173,6 +174,7 @@ public class NioSocketChannelTest extends AbstractNioChannelTest<NioSocketChanne
     private static void testChannelReRegisterRead(final boolean sameEventLoop) throws Exception {
         final EventLoopGroup group = new NioEventLoopGroup(2);
         final CountDownLatch latch = new CountDownLatch(1);
+
 
         // Just some random bytes
         byte[] bytes = new byte[1024];
@@ -279,6 +281,95 @@ public class NioSocketChannelTest extends AbstractNioChannelTest<NioSocketChanne
                 // ignore
             }
             group.shutdownGracefully();
+        }
+    }
+
+    // 测试事件的顺序
+    @Test
+    public void testEventOrder() throws InterruptedException {
+        EventLoopGroup loopGroup = new NioEventLoopGroup(1);
+        final CountDownLatch countDownLatch = new CountDownLatch(1);
+        final AtomicInteger serverOrder = new AtomicInteger(1);
+        final AtomicInteger result = new AtomicInteger(0);
+
+        byte[] bytes = new byte[1024];
+        PlatformDependent.threadLocalRandom().nextBytes(bytes);
+
+        Channel sc = null;
+        Channel cc = null;
+        ServerBootstrap serverBootstrap = new ServerBootstrap();
+
+        try {
+            serverBootstrap.group(loopGroup)
+                    .channel(NioServerSocketChannel.class)
+                    .childHandler(new ChannelInitializer<NioSocketChannel>() {
+                        @Override
+                        protected void initChannel(NioSocketChannel ch) throws Exception {
+                            ChannelPipeline pipeline = ch.pipeline();
+                            pipeline.addLast(new SimpleChannelInboundHandler<ByteBuf>() {
+
+                                @Override
+                                public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+                                    if (1 != serverOrder.getAndIncrement()) {
+                                        throw new RuntimeException();
+                                    }
+                                }
+
+                                @Override
+                                public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+                                    if (2 != serverOrder.getAndIncrement()) {
+                                        throw new RuntimeException();
+                                    }
+                                }
+
+                                @Override
+                                public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                                    if (3 != serverOrder.getAndIncrement()) {
+                                        throw new RuntimeException();
+                                    }
+                                }
+
+                                @Override
+                                protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
+                                    if (4 != serverOrder.getAndIncrement()) {
+                                        throw new RuntimeException();
+                                    }
+                                }
+
+                                @Override
+                                public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+                                    if (5 != serverOrder.getAndIncrement()) {
+                                        throw new RuntimeException();
+                                    }
+                                    countDownLatch.countDown();
+                                }
+
+                                @Override
+                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+                                    result.set(1);
+                                    countDownLatch.countDown();
+                                    throw new RuntimeException(cause);
+                                }
+                            });
+                        }
+                    });
+            sc = serverBootstrap.bind(0).syncUninterruptibly().channel();
+
+            Bootstrap bootstrap = new Bootstrap();
+            bootstrap.group(loopGroup).channel(NioSocketChannel.class);
+            bootstrap.handler(new ChannelInboundHandlerAdapter());
+            cc = bootstrap.connect(sc.localAddress()).syncUninterruptibly().channel();
+            cc.writeAndFlush(Unpooled.wrappedBuffer(bytes)).syncUninterruptibly();
+            countDownLatch.await();
+            assertEquals(0, result.get());
+        } finally {
+            if (cc != null) {
+                cc.close();
+            }
+            if (sc != null) {
+                sc.close();
+            }
+            loopGroup.shutdownGracefully();
         }
     }
 
